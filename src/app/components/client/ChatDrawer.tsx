@@ -3,16 +3,17 @@ import { Card, CardContent } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { ChatConversation } from '@/types';
-import { MessageSquare, Star, DollarSign, X, CheckCircle2, XCircle, ArrowLeft } from 'lucide-react';
+import { MessageSquare, Star, DollarSign, X, CheckCircle2, XCircle, ArrowLeft, Trash2 } from 'lucide-react';
 
 interface ChatDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectChat: (chatId: string) => void;
   chats: ChatConversation[];
+  onDeleteChat?: (chatId: string) => void;
 }
 
-export function ChatDrawer({ isOpen, onClose, onSelectChat, chats }: ChatDrawerProps) {
+export function ChatDrawer({ isOpen, onClose, onSelectChat, chats, onDeleteChat }: ChatDrawerProps) {
   const [isAnimating, setIsAnimating] = useState(false);
 
   useEffect(() => {
@@ -68,17 +69,15 @@ export function ChatDrawer({ isOpen, onClose, onSelectChat, chats }: ChatDrawerP
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${
-          isOpen ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'
+          }`}
         onClick={onClose}
       />
 
       {/* Drawer */}
       <div
-        className={`fixed inset-0 z-50 bg-white transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className={`fixed inset-0 z-50 bg-white transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
         onTransitionEnd={() => {
           if (!isOpen) setIsAnimating(false);
         }}
@@ -174,6 +173,19 @@ export function ChatDrawer({ isOpen, onClose, onSelectChat, chats }: ChatDrawerP
                           {chat.unreadCount}
                         </Badge>
                       )}
+                      {onDeleteChat && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-gray-400 hover:text-red-500"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            onDeleteChat(chat.id);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -221,7 +233,22 @@ export function ChatDrawer({ isOpen, onClose, onSelectChat, chats }: ChatDrawerP
                         </div>
                         <p className="text-xs text-gray-500">{formatTime(chat.lastMessageTime)}</p>
                       </div>
-                      {getStatusBadge(chat.status)}
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(chat.status)}
+                        {onDeleteChat && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-gray-400 hover:text-red-500"
+                            onClick={(e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              onDeleteChat(chat.id);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -255,7 +282,22 @@ export function ChatDrawer({ isOpen, onClose, onSelectChat, chats }: ChatDrawerP
                         <p className="text-xs text-gray-400 line-clamp-2">{chat.lastMessage}</p>
                         <div className="flex items-center justify-between pt-2">
                           <p className="text-xs text-gray-500">{formatTime(chat.lastMessageTime)}</p>
-                          {getStatusBadge(chat.status)}
+                          <div className="flex items-center gap-2">
+                            {getStatusBadge(chat.status)}
+                            {onDeleteChat && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-gray-400 hover:text-red-500"
+                                onClick={(e: React.MouseEvent) => {
+                                  e.stopPropagation();
+                                  onDeleteChat(chat.id);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

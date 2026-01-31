@@ -67,20 +67,21 @@ export interface Provider {
   id: string;
   name: string;
   rating: number;
+  totalReviews: number;
   reviewCount: number;
+  responseRate: number; // Added
+  avgResponseTime: string; // Added
   category: ServiceCategory;
   phone: string;
-  location: {
-    lat: number;
-    lng: number;
-    district: string;
-  };
+  location: Location;
   coverageRadius: number; // km
   isPremium: boolean;
-  responseTime: string; // "< 5 min"
+  membershipStatus: 'free' | 'paid';
+  responseTime: string; // Maintain both if needed or unify
   services: string[];
   requestsThisMonth: number;
   freeRequestsLimit: number;
+  profileImage?: string;
 }
 
 export interface ChatConversation {
@@ -207,11 +208,13 @@ export interface ProductNegotiation {
 
 export interface NegotiationMessage {
   id: string;
-  sender: 'client' | 'provider';
-  type: 'offer' | 'counter-offer' | 'message' | 'acceptance' | 'rejection';
+  sender: 'client' | 'provider' | 'cliente' | 'proveedor';
+  type: 'offer' | 'counter-offer' | 'message' | 'acceptance' | 'rejection' | 'price_proposal';
   amount?: number;
+  price?: number; // Used in PriceNegotiation.tsx
   message: string;
   createdAt: Date;
+  timestamp: Date; // Used in PriceNegotiation.tsx (mapping to createdAt)
 }
 
 export interface ProductOrder {

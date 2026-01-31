@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { ChatConversation } from '@/types';
-import { MessageSquare, Star, DollarSign, Clock, CheckCircle2, XCircle, MessageCircle } from 'lucide-react';
+import { MessageSquare, Star, DollarSign, Clock, CheckCircle2, XCircle, MessageCircle, Trash2 } from 'lucide-react';
 import { ProviderChat } from '../ProviderChat';
 import { ChatDrawer } from './ChatDrawer';
 import { chatService } from '@/services';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/app/components/ui/dialog';
 
 interface ChatListProps {
   onBack?: () => void;
@@ -16,12 +17,24 @@ export function ChatList({ onBack }: ChatListProps) {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [chats, setChats] = useState<ChatConversation[]>([]);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    const fetchChats = async () => {
-      try {
-        const response = await chatService.getConversations();
-        const mappedChats: ChatConversation[] = response.data.map((c: any) => ({
+  const fetchChats = async () => {
+    try {
+      const response = await chatService.getConversations();
+      const mappedChats: ChatConversation[] = response.data.map((c: any) => {
+        let frontendStatus: 'active' | 'completed' | 'cancelled' = 'active';
+
+        const backendStatus = (c.Status || '').toLowerCase();
+        if (backendStatus === 'aceptada') {
+          frontendStatus = 'completed';
+        } else if (backendStatus === 'rechazada') {
+          frontendStatus = 'cancelled';
+        }
+
+        return {
           id: c.Id,
           providerId: c.ProveedorId,
           providerName: c.InterviewerName || 'Proveedor',
@@ -29,19 +42,38 @@ export function ChatList({ onBack }: ChatListProps) {
           lastMessage: c.LastMessage || 'Inicio de conversación',
           lastMessageTime: new Date(c.LastMessageTime || Date.now()),
           unreadCount: c.UnreadCount || 0,
-          status: 'active',
+          status: frontendStatus,
           serviceCategory: c.ServiceCategory || 'General',
           quotedPrice: c.QuotedPrice || 0,
           negotiationId: c.NegotiationId,
           type: c.TipoRelacion
-        }));
-        setChats(mappedChats);
-      } catch (error) {
-        console.error("Error loading chats", error);
-      }
-    };
+        };
+      });
+      setChats(mappedChats);
+    } catch (error) {
+      console.error("Error loading chats", error);
+    }
+  };
+
+  useEffect(() => {
     fetchChats();
   }, []);
+
+  const handleDeleteChat = async () => {
+    if (!chatToDelete) return;
+    setDeleting(true);
+    try {
+      await chatService.deleteConversation(chatToDelete);
+      setIsDeleteDialogOpen(false);
+      setChatToDelete(null);
+      fetchChats();
+    } catch (error) {
+      alert('Error al eliminar la conversación');
+      console.error(error);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const getStatusBadge = (status: ChatConversation['status']) => {
     switch (status) {
@@ -220,6 +252,18 @@ export function ChatList({ onBack }: ChatListProps) {
                           {chat.unreadCount} nuevo{chat.unreadCount > 1 ? 's' : ''}
                         </Badge>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-gray-400 hover:text-red-500 mt-2"
+                        onClick={(e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          setChatToDelete(chat.id);
+                          setIsDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                   <div className="flex items-center justify-between pt-3 border-t">
@@ -268,7 +312,21 @@ export function ChatList({ onBack }: ChatListProps) {
                     </div>
                     <div className="text-right ml-4">
                       <p className="text-xs text-gray-500 mb-2">{formatTime(chat.lastMessageTime)}</p>
-                      {getStatusBadge(chat.status)}
+                      <div className="flex flex-col items-end gap-2">
+                        {getStatusBadge(chat.status)}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-gray-300 hover:text-red-500"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            setChatToDelete(chat.id);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-sm pt-3 border-t mt-3">
@@ -310,7 +368,21 @@ export function ChatList({ onBack }: ChatListProps) {
                     </div>
                     <div className="text-right ml-4">
                       <p className="text-xs text-gray-500 mb-2">{formatTime(chat.lastMessageTime)}</p>
-                      {getStatusBadge(chat.status)}
+                      <div className="flex flex-col items-end gap-2">
+                        {getStatusBadge(chat.status)}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-gray-300 hover:text-red-500"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            setChatToDelete(chat.id);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -374,7 +446,31 @@ export function ChatList({ onBack }: ChatListProps) {
         onClose={() => setIsMobileDrawerOpen(false)}
         onSelectChat={handleSelectChat}
         chats={chats}
+        onDeleteChat={(id) => {
+          setChatToDelete(id);
+          setIsDeleteDialogOpen(true);
+        }}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar conversación?</DialogTitle>
+            <DialogDescription>
+              Esta acción quitará el chat de tu lista. El otro participante aún podrá ver la conversación.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={deleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteChat} disabled={deleting}>
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -16,6 +16,7 @@ export const mockProviders: Provider[] = [
     category: 'plomeria',
     rating: 4.8,
     totalReviews: 127,
+    reviewCount: 127,
     responseRate: 95,
     avgResponseTime: '3 min',
     location: mockLocations[0],
@@ -24,7 +25,9 @@ export const mockProviders: Provider[] = [
     phone: '+507 6XXX-XXXX',
     services: ['Reparaciones', 'Instalaciones', 'Emergencias 24/7'],
     isPremium: true,
+    membershipStatus: 'paid',
     requestsThisMonth: 45,
+    responseTime: '3 min',
     freeRequestsLimit: 10
   },
   {
@@ -41,6 +44,9 @@ export const mockProviders: Provider[] = [
     phone: '+507 6XXX-XXXX',
     services: ['Instalaciones eléctricas', 'Reparaciones', 'Mantenimiento'],
     isPremium: true,
+    membershipStatus: 'paid',
+    reviewCount: 203,
+    responseTime: '2 min',
     requestsThisMonth: 62,
     freeRequestsLimit: 10
   },
@@ -58,6 +64,9 @@ export const mockProviders: Provider[] = [
     phone: '+507 6XXX-XXXX',
     services: ['Instalación', 'Reparación', 'Mantenimiento', 'Todas las marcas'],
     isPremium: true,
+    membershipStatus: 'paid',
+    reviewCount: 156,
+    responseTime: '4 min',
     requestsThisMonth: 38,
     freeRequestsLimit: 10
   },
@@ -75,6 +84,9 @@ export const mockProviders: Provider[] = [
     phone: '+507 6XXX-XXXX',
     services: ['Reparaciones generales', 'Instalaciones'],
     isPremium: false,
+    membershipStatus: 'free',
+    reviewCount: 89,
+    responseTime: '5 min',
     requestsThisMonth: 7,
     freeRequestsLimit: 10
   },
@@ -92,6 +104,9 @@ export const mockProviders: Provider[] = [
     phone: '+507 6XXX-XXXX',
     services: ['Emergencias', 'Instalaciones', 'Reparaciones'],
     isPremium: true,
+    membershipStatus: 'paid',
+    reviewCount: 74,
+    responseTime: '6 min',
     requestsThisMonth: 31,
     freeRequestsLimit: 10
   }

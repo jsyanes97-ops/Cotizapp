@@ -81,6 +81,22 @@ namespace Cotizapp.API
                     Console.WriteLine("tbl_NegociacionesServicio.UltimoEmisorId Fixed.");
                 }
 
+                // 2.3 Visibility flags for tbl_Conversaciones (Soft Delete)
+                var checkSql3 = @"
+                    SELECT count(*) 
+                    FROM sys.columns 
+                    WHERE object_id = OBJECT_ID(N'[dbo].[tbl_Conversaciones]') 
+                    AND name = 'VisibleParaCliente'";
+                
+                int count3 = connection.QueryFirstOrDefault<int>(checkSql3);
+                if (count3 == 0)
+                {
+                    Console.WriteLine("Adding visibility flags to tbl_Conversaciones...");
+                    connection.Execute("ALTER TABLE tbl_Conversaciones ADD VisibleParaCliente BIT NOT NULL DEFAULT 1");
+                    connection.Execute("ALTER TABLE tbl_Conversaciones ADD VisibleParaProveedor BIT NOT NULL DEFAULT 1");
+                    Console.WriteLine("Visibility flags added.");
+                }
+
                 Console.WriteLine("Schema Verification Complete.");
                 
                 // 3. Ensure SPs are correct (Nuclear Option: Fix ALL Negotiation SPs)
@@ -157,6 +173,10 @@ BEGIN
     JOIN tbl_Usuarios u ON (c.ClienteId = u.Id OR c.ProveedorId = u.Id)
     WHERE (c.ClienteId = @UsuarioId OR c.ProveedorId = @UsuarioId)
       AND u.Id != @UsuarioId 
+      AND (
+          (c.ClienteId = @UsuarioId AND c.VisibleParaCliente = 1) OR
+          (c.ProveedorId = @UsuarioId AND c.VisibleParaProveedor = 1)
+      )
     ORDER BY LastMessageTime DESC;
 END";
                 connection.Execute(spGetConversations);
@@ -433,6 +453,12 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
+        IF @CounterCount >= 3
+        BEGIN
+             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
+             RETURN;
+        END
+
         UPDATE tbl_NegociacionesServicio
         SET Estado = 'Contraoferta',
             OfertaActual = @MontoContraoferta,
@@ -506,6 +532,12 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
+        IF @CounterCount >= 4
+        BEGIN
+             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
+             RETURN;
+        END
+
         UPDATE tbl_NegociacionesProducto
         SET Estado = 'Contraoferta',
             OfertaActual = @MontoContraoferta,
@@ -561,7 +593,8 @@ BEGIN
             N.UltimoEmisorId,
             N.Estado,
             N.ProveedorId,
-            N.ClienteId
+            N.ClienteId,
+            N.ContadorContraofertas
         FROM tbl_NegociacionesServicio N
         JOIN tbl_ServiciosOfrecidos S ON N.ServicioId = S.Id
         WHERE N.Id = @RelacionId OR (N.ServicioId = @RelacionId AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId))
@@ -578,7 +611,8 @@ BEGIN
             N.UltimoEmisorId,
             N.Estado,
             N.ProveedorId,
-            N.ClienteId
+            N.ClienteId,
+            N.ContadorContraofertas
         FROM tbl_NegociacionesProducto N
         JOIN tbl_Productos P ON N.ProductoId = P.Id
         WHERE N.ProductoId = @RelacionId AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
@@ -588,6 +622,21 @@ END";
             
             connection.Execute(spContext);
             Console.WriteLine("sp_ObtenerContextoDeChat Refreshed.");
+
+            var spEliminar = @"CREATE OR ALTER PROCEDURE sp_EliminarConversacion
+    @ConversacionId UNIQUEIDENTIFIER,
+    @UsuarioId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE tbl_Conversaciones
+    SET VisibleParaCliente = CASE WHEN ClienteId = @UsuarioId THEN 0 ELSE VisibleParaCliente END,
+        VisibleParaProveedor = CASE WHEN ProveedorId = @UsuarioId THEN 0 ELSE VisibleParaProveedor END
+    WHERE Id = @ConversacionId;
+END";
+            connection.Execute(spEliminar);
+            Console.WriteLine("sp_EliminarConversacion created.");
 
 
             var spClientServ = @"CREATE OR ALTER PROCEDURE sp_GestionarNegociacionClienteServicio
@@ -644,6 +693,12 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
+        IF @CounterCount >= 3
+        BEGIN
+             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
+             RETURN;
+        END
+
         UPDATE tbl_NegociacionesServicio
         SET Estado = 'Contraoferta',
             OfertaActual = @MontoContraoferta,
@@ -719,6 +774,12 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
+        IF @CounterCount >= 3
+        BEGIN
+             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
+             RETURN;
+        END
+
         UPDATE tbl_NegociacionesProducto
         SET Estado = 'Contraoferta',
             OfertaActual = @MontoContraoferta,
@@ -798,10 +859,10 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        -- Check Limit (Max 2 counter-offers)
-        IF @CounterCount >= 2
+        -- Check Limit (Max 5 total counter-offers/messages)
+        IF @CounterCount >= 3
         BEGIN
-            SELECT 'ERROR' as Status, 'Has alcanzado el límite de 2 contraofertas.' as Message;
+            SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;
         END
 
@@ -883,9 +944,9 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 2
+        IF @CounterCount >= 3
         BEGIN
-            SELECT 'ERROR' as Status, 'Has alcanzado el límite de 2 contraofertas.' as Message;
+            SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;
         END
 

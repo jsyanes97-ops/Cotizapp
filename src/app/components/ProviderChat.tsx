@@ -37,7 +37,9 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       // Map basic fields
       const mapped = res.data.map((m: any) => ({
         id: m.Id || m.id,
-        sender: m.EmisorId === JSON.parse(localStorage.getItem('user') || '{}').id ? 'user' : 'provider',
+        sender: (m.EmisorId && JSON.parse(localStorage.getItem('user') || '{}').id &&
+          m.EmisorId.toString().toLowerCase() === JSON.parse(localStorage.getItem('user') || '{}').id.toString().toLowerCase())
+          ? 'user' : 'other',
         content: m.Contenido,
         timestamp: new Date(m.FechaEnvio || m.timestamp),
         type: m.Tipo || 'Texto'
@@ -72,12 +74,29 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     }
   };
 
-  // Check if we should show actions (if last message is counter-offer from provider)
-  const canRespond = () => {
-    if (!negotiationId || !type) return false;
-    const lastMsg = messages[messages.length - 1];
-    return lastMsg && lastMsg.sender === 'provider' && lastMsg.type === 'Negociacion' && lastMsg.content.includes('contraoferta');
+  // Check if we should show actions or block chat
+  const getNegotiationState = () => {
+    if (!negotiationId || !type) return { isPending: false, isRejected: false, isAccepted: false };
+
+    const negRelatedMessages = messages.filter(m => m.type === 'Negociacion' || m.type === 'Sistema');
+    if (negRelatedMessages.length === 0) return { isPending: false, isRejected: false, isAccepted: false };
+
+    const lastEvent = negRelatedMessages[negRelatedMessages.length - 1];
+
+    const isRejected = lastEvent.type === 'Sistema' && lastEvent.content.toLowerCase().includes('rechazado');
+    const isAccepted = lastEvent.type === 'Sistema' && lastEvent.content.toLowerCase().includes('aceptado');
+    const isPending = lastEvent.type === 'Negociacion' &&
+      lastEvent.sender === 'other' &&
+      lastEvent.content.toLowerCase().includes('contraoferta');
+
+    return { isPending, isRejected, isAccepted };
   };
+
+  const { isPending: isNegotiationPending, isRejected: isNegotiationRejected } = getNegotiationState();
+  const chatDisabled = isNegotiationPending || isNegotiationRejected;
+
+  const negotiationCount = messages.filter(m => m.type === 'Negociacion' || m.type === 'price_proposal').length;
+  const limitReached = negotiationCount >= 3;
 
   const handleActionClick = (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
     setActionType(action);
@@ -104,14 +123,22 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
         message: actionMessage
       });
 
-      if (response.data.Message) {
-        alert(response.data.Message); // "Oferta aceptada", "Oferta rechazada", "Contraoferta enviada" etc.
-        setIsActionDialogOpen(false);
-        setActionType(null);
-        setCounterOfferAmount('');
-        setActionMessage('');
-        fetchMessages(); // Refresh chat
+      const { Status, Message } = response.data;
+
+      if (Status === 'ERROR') {
+        alert(Message || 'Error al procesar la acción');
+        return;
       }
+
+      // Action successful
+      if (Message) alert(Message);
+
+      setIsActionDialogOpen(false);
+      setActionType(null);
+      setCounterOfferAmount('');
+      setActionMessage('');
+      fetchMessages(); // Refresh chat
+
     } catch (error: any) {
       alert('Error: ' + (error.response?.data?.Error || error.message));
     }
@@ -142,7 +169,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
 
   return (
     <Card className="flex flex-col h-[600px] border-none shadow-none sm:border sm:shadow-sm relative">
-      {/* Header */}
+      {/* Header logic ... */}
       <div className="bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
           <h3 className="font-semibold text-lg">{providerName}</h3>
@@ -185,19 +212,23 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       </div>
 
       {/* Negotiation Actions Overlay */}
-      {canRespond() && (
+      {isNegotiationPending && (
         <div className="absolute bottom-[80px] left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent">
           <Card className="bg-indigo-50 border-indigo-200 shadow-lg p-4 animate-in slide-in-from-bottom duration-300">
-            <div className="flex items-center gap-2 mb-3 text-indigo-800 font-medium">
+            <div className="flex items-center gap-2 mb-3 text-indigo-800 font-medium text-sm">
               <TrendingUp className="w-5 h-5" />
-              El proveedor ha enviado una contraoferta. ¿Qué deseas hacer?
+              El proveedor ha enviado una contraoferta. Responde para continuar el chat.
             </div>
             <div className="flex gap-2">
               <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleActionClick('Aceptar')}>
                 Aceptar
               </Button>
-              <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleActionClick('Contraoferta')}>
-                Contraofertar (Max 2)
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => handleActionClick('Contraoferta')}
+                disabled={limitReached}
+              >
+                {limitReached ? 'Límite Alcanzado' : 'Contraofertar'}
               </Button>
               <Button className="flex-1 bg-red-100 hover:bg-red-200 text-red-700" variant="ghost" onClick={() => handleActionClick('Rechazar')}>
                 Rechazar
@@ -213,11 +244,18 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
           <Input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Escribe un mensaje..."
+            onKeyPress={(e) => e.key === 'Enter' && !chatDisabled && handleSend()}
+            placeholder={
+              isNegotiationPending
+                ? "Resuelve la oferta para chatear..."
+                : isNegotiationRejected
+                  ? "Chat cerrado (oferta rechazada)"
+                  : "Escribe un mensaje..."
+            }
             className="flex-1"
+            disabled={chatDisabled}
           />
-          <Button onClick={handleSend} disabled={!inputValue.trim()} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={handleSend} disabled={!inputValue.trim() || chatDisabled} className="bg-blue-600 hover:bg-blue-700">
             <Send className="w-5 h-5" />
           </Button>
         </div>

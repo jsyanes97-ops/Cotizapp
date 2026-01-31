@@ -4,7 +4,7 @@ using Cotizapp.API.Models;
 
 namespace Cotizapp.API.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/chat")]
     [ApiController]
     public class ChatController : ControllerBase
     {
@@ -61,6 +61,21 @@ namespace Cotizapp.API.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
+        [HttpDelete("delete/{conversationId}/{userId}")]
+        public async Task<IActionResult> DeleteConversation(Guid conversationId, Guid userId)
+        {
+            Console.WriteLine($"[DEBUG] Deleting conversation {conversationId} for user {userId}");
+            try
+            {
+                await _db.EditData("sp_EliminarConversacion", new { ConversacionId = conversationId, UsuarioId = userId });
+                return Ok(new { Status = "Deleted" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
     }
 
     public class MessageDto
@@ -82,5 +97,6 @@ namespace Cotizapp.API.Controllers
         public string Estado { get; set; }
         public Guid ProveedorId { get; set; }
         public Guid ClienteId { get; set; }
+        public int ContadorContraofertas { get; set; }
     }
 }

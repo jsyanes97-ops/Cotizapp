@@ -16,6 +16,7 @@ interface NegotiationContext {
     estado: string;
     proveedorId: string;
     clienteId: string;
+    contadorContraofertas?: number;
 }
 
 interface NegotiationStatusCardProps {
@@ -34,12 +35,9 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
 
     const isClientTurn = normalizedLastSender !== normalizedCurrentUser && negotiation.estado === 'Contraoferta';
 
-    // ...
-
-    // (Kept render parts same, but update inline checks)
-    // Actually, I should update the render logic below to use these new variables.
-    // However, since I can't easily replace disjointed lines with replace_file_content in one go without replacing the middle, 
-    // I will use constants in the checks.
+    // Check both camelCase and PascalCase to be safe with Dapper/JSON serialization
+    const count = (negotiation as any).ContadorContraofertas ?? negotiation.contadorContraofertas ?? 0;
+    const limitReached = count >= 3;
 
     // Status Display Logic
     const getStatusBadge = () => {
@@ -53,6 +51,10 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     };
 
     const handleAction = async (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
+        if (action === 'Contraoferta' && limitReached) {
+            alert('Límite de contraofertas alcanzado.');
+            return;
+        }
         setLoading(true);
         try {
             await clientNegotiationService.respond({
@@ -126,7 +128,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
 
                 {normalizedLastSender !== normalizedCurrentUser && negotiation.estado === 'Contraoferta' && (
                     <p className="text-xs text-orange-600 mt-2 font-medium">
-                        📣 El proveedor te ha enviado esta contraoferta. ¿Qué deseas hacer?
+                        📣 El proveedor te ha enviado esta contraoferta. {limitReached ? 'El límite de ofertas ha sido alcanzado.' : '¿Qué deseas hacer?'}
                     </p>
                 )}
                 {normalizedLastSender === normalizedCurrentUser && (
@@ -149,15 +151,28 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                             >
                                 <Check className="w-4 h-4 mr-1" /> Aceptar
                             </Button>
-                            <Button
-                                variant="outline"
-                                className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
-                                size="sm"
-                                onClick={() => setIsCountering(true)}
-                                disabled={loading}
-                            >
-                                <RefreshCw className="w-4 h-4 mr-1" /> Contraofertar
-                            </Button>
+
+                            {limitReached ? (
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 border-gray-200 text-gray-500 cursor-not-allowed"
+                                    size="sm"
+                                    disabled={true}
+                                >
+                                    <X className="w-4 h-4 mr-1" /> Límite Alcanzado
+                                </Button>
+                            ) : (
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                    size="sm"
+                                    onClick={() => setIsCountering(true)}
+                                    disabled={loading}
+                                >
+                                    <RefreshCw className="w-4 h-4 mr-1" /> Contraofertar
+                                </Button>
+                            )}
+
                             <Button
                                 variant="ghost"
                                 className="px-3 text-red-500 hover:text-red-700 hover:bg-red-50"

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Button } from '@/app/components/ui/button';
 import { MessageSquare, Users, History, ShoppingBag, Package2, LogIn, Settings } from 'lucide-react';
@@ -7,62 +7,27 @@ import { ChatList } from './client/ChatList';
 import { RequestHistory } from './client/RequestHistory';
 import { ServiceMarketplace } from './client/ServiceMarketplace';
 import { ProductMarketplace } from './client/ProductMarketplace';
-import { AuthModal, RegisterData } from './AuthModal';
 import { UserSettings } from './UserSettings';
 import { authService } from '@/services';
 
-export function ClientDashboard() {
-  const [showAuthModal, setShowAuthModal] = useState(false);
+export function ClientDashboard({ onLogout }: { onLogout?: () => void }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; phone?: string; location?: string; bio?: string } | null>(null);
 
-  const handleLogin = async (email: string, password: string) => {
-    try {
-      const data = await authService.login(email, password);
-      // Backend returns { token, user: { id, nombre, ... } }
-      // setCurrentUser needs name, email, phone, location. 
-      // Ensure backend returns enough info or fetch profile.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userStr = localStorage.getItem('user');
+    if (token && userStr) {
+      const user = JSON.parse(userStr);
       setCurrentUser({
-        name: data.user.nombre,
-        email: email,
-        phone: data.user.telefono,
-        location: 'Panamá' // Backend might not return location on login yet
-      });
-      setIsAuthenticated(true);
-      setShowAuthModal(false);
-      alert('¡Inicio de sesión exitoso!');
-    } catch (error) {
-      console.error(error);
-      alert('Error al iniciar sesión. Verifica tus credenciales.');
-    }
-  };
-
-  const handleRegister = async (userData: RegisterData) => {
-    try {
-      await authService.register({
-        nombre: userData.name,
-        email: userData.email,
-        password: userData.password,
-        telefono: userData.phone,
-        tipoUsuario: 'Cliente'
-      });
-
-      // Auto-login
-      const loginData = await authService.login(userData.email, userData.password);
-      setCurrentUser({
-        name: loginData.user.nombre,
-        email: userData.email,
-        phone: loginData.user.telefono,
+        name: user.nombre,
+        email: user.email,
+        phone: user.telefono,
         location: 'Panamá'
       });
       setIsAuthenticated(true);
-      setShowAuthModal(false);
-      alert('¡Cuenta creada y sesión iniciada!');
-    } catch (error: any) {
-      console.error(error);
-      alert('Error al registrar usuario: ' + (error.response?.data?.Error || error.message));
     }
-  };
+  }, []);
 
   const handleUpdateProfile = (profileData: any) => {
     console.log('Updating profile:', profileData);
@@ -70,8 +35,10 @@ export function ClientDashboard() {
   };
 
   const handleLogout = () => {
+    authService.logout();
     setCurrentUser(null);
     setIsAuthenticated(false);
+    if (onLogout) onLogout();
   };
 
   return (
@@ -103,16 +70,9 @@ export function ClientDashboard() {
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setShowAuthModal(true)}
-                className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
-              >
-                <LogIn className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">Iniciar Sesión</span>
-                <span className="sm:hidden">Login</span>
-              </Button>
+              <div className="flex items-center gap-1 sm:gap-2 px-3 py-1 bg-gray-100 rounded text-gray-400 text-xs italic">
+                No autenticado
+              </div>
             )}
           </div>
         </div>
@@ -181,22 +141,10 @@ export function ClientDashboard() {
               <p className="text-sm sm:text-base text-gray-600 mb-4 text-center max-w-md">
                 Accede a tu cuenta para personalizar tu experiencia y gestionar tus preferencias
               </p>
-              <Button onClick={() => setShowAuthModal(true)} className="text-sm">
-                <LogIn className="w-4 h-4 mr-2" />
-                Iniciar Sesión
-              </Button>
             </div>
           )}
         </TabsContent>
       </Tabs>
-
-      {/* Auth Modal */}
-      <AuthModal
-        open={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onLogin={handleLogin}
-        onRegister={handleRegister}
-      />
     </div>
   );
 }

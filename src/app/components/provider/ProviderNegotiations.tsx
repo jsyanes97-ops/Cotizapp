@@ -170,17 +170,17 @@ export function ProviderNegotiations() {
                                                             className="w-full"
                                                             variant="outline"
                                                             onClick={() => {
-                                                                if (item.contadorContraofertas >= 2) {
+                                                                if (item.contadorContraofertas >= 3) {
                                                                     alert('Has alcanzado el límite de contraofertas.');
                                                                     return;
                                                                 }
                                                                 setCounterOfferId(item.id);
                                                                 setCounterAmount(''); // Reset
                                                             }}
-                                                            disabled={item.contadorContraofertas >= 2}
+                                                            disabled={item.contadorContraofertas >= 3}
                                                         >
                                                             <DollarSign className="w-4 h-4 mr-2" />
-                                                            Contraoferta {item.contadorContraofertas >= 2 && '(Max)'}
+                                                            Contraoferta {item.contadorContraofertas >= 3 && '(Max)'}
                                                         </Button>
 
                                                         <Button className="w-full" variant="ghost" onClick={() => handleRespond(item, 'Rechazar')}>

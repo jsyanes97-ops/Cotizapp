@@ -9,7 +9,7 @@ import { DollarSign, MessageSquare, TrendingDown, TrendingUp, CheckCircle2 } fro
 
 interface PriceNegotiationProps {
   quote: Quote;
-  userRole: 'client' | 'provider';
+  userRole: 'cliente' | 'proveedor' | 'client' | 'provider';
   onUpdateQuote: (updatedQuote: Quote) => void;
   onAccept: () => void;
 }
@@ -24,6 +24,39 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
   const originalPrice = quote.originalPrice || quote.price;
   const priceChanged = currentPrice !== originalPrice;
 
+  // Calculate counter-offers
+  const isClient = userRole === 'client' || userRole === 'cliente';
+
+  const myCounterOffers = negotiationHistory.filter(
+    item => {
+      const isItemFromClient = item.sender === 'client' || item.sender === 'cliente';
+      return item.type === 'price_proposal' && (isClient ? isItemFromClient : !isItemFromClient);
+    }
+  ).length;
+
+  const totalCounterOffers = negotiationHistory.filter(item => item.type === 'price_proposal').length;
+
+  // Max 2 counters per side.
+  // BUT: logic requires P0 -> C1 -> P1 -> C2 -> P2 (Final).
+  // Total of 4 counters after initial offer? 
+  // Initial offer is NOT a counter.
+  // Current logic counts ALL 'price_proposal' messages?
+  // Let's assume initial offer is NOT in history (usually history starts with first negotiation message).
+  // If P sends initial offer: not in history?
+  // 'quote.negotiationHistory' usually contains counters.
+
+  // Max 2 counters per side (Total 4 messages: Init + P1 + C1 + P2).
+  // History INCLUDES the Initial Offer (P0/C0) as a 'price_proposal'.
+  // Sequence: C(Init), P1, C1, P2(Final).
+  // Total proposals allowed = 4.
+
+  const limitPerUser = 2;
+  const totalLimit = 3;
+
+  const canCounter = myCounterOffers < limitPerUser && totalCounterOffers < totalLimit;
+
+  const isFinalOffer = totalCounterOffers >= totalLimit;
+
   const handleSendProposal = () => {
     if (!proposedPrice || Number(proposedPrice) <= 0) {
       alert('Por favor ingresa un precio válido');
@@ -32,13 +65,14 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
 
     const newMessage: NegotiationMessage = {
       id: Date.now().toString(),
-      sender: userRole === 'client' ? 'client' : 'provider',
+      sender: isClient ? 'cliente' : 'proveedor',
       type: 'price_proposal',
       price: Number(proposedPrice),
-      message: message || (userRole === 'client' 
+      message: message || (userRole === 'client'
         ? `¿Puedes hacerlo por $${proposedPrice}?`
         : `Te puedo ofrecer $${proposedPrice}`),
-      timestamp: new Date()
+      timestamp: new Date(),
+      createdAt: new Date()
     };
 
     const updatedQuote: Quote = {
@@ -63,7 +97,8 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
       sender: userRole === 'client' ? 'client' : 'provider',
       type: 'message',
       message: message,
-      timestamp: new Date()
+      timestamp: new Date(),
+      createdAt: new Date()
     };
 
     const updatedQuote: Quote = {
@@ -83,7 +118,8 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
       type: 'acceptance',
       price: currentPrice,
       message: `Acepto el precio de $${currentPrice}`,
-      timestamp: new Date()
+      timestamp: new Date(),
+      createdAt: new Date()
     };
 
     const updatedQuote: Quote = {
@@ -140,7 +176,7 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
                 </div>
               )}
             </div>
-            
+
             {priceChanged && (
               <div className="text-right">
                 <p className="text-xs text-gray-500">Precio original</p>
@@ -158,28 +194,27 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
               {negotiationHistory.map((item) => (
                 <div
                   key={item.id}
-                  className={`p-3 rounded-lg text-sm ${
-                    item.sender === userRole
-                      ? 'bg-blue-100 ml-8'
-                      : 'bg-gray-100 mr-8'
-                  }`}
+                  className={`p-3 rounded-lg text-sm ${item.sender === userRole
+                    ? 'bg-blue-100 ml-8'
+                    : 'bg-gray-100 mr-8'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium">
-                      {item.sender === 'client' ? '👤 Cliente' : '🧑‍🔧 Proveedor'}
+                      {item.sender === 'client' || item.sender === 'cliente' ? '👤 Cliente' : '🧑‍🔧 Proveedor'}
                     </span>
                     <span className="text-xs text-gray-500">
                       {item.timestamp.toLocaleTimeString('es-PA', { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  
+
                   {item.type === 'price_proposal' && item.price && (
                     <div className="flex items-center gap-2 mb-1">
                       <DollarSign className="w-4 h-4" />
                       <span className="font-semibold text-lg">${item.price}</span>
                     </div>
                   )}
-                  
+
                   <p className="text-gray-700">{item.message}</p>
                 </div>
               ))}
@@ -195,9 +230,10 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
                 variant="outline"
                 onClick={() => setShowPriceInput(true)}
                 className="w-full"
+                disabled={!canCounter}
               >
                 <DollarSign className="w-4 h-4 mr-2" />
-                Proponer Precio
+                {canCounter ? 'Proponer Precio' : 'Límite Alcanzado'}
               </Button>
               <Button
                 onClick={handleAcceptPrice}
@@ -286,11 +322,17 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
         {/* Info */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
           <p className="text-blue-900">
-            💡 <strong>Tip:</strong> {userRole === 'client' 
+            💡 <strong>Tip:</strong> {userRole === 'client'
               ? 'Negocia de forma justa. Un buen precio beneficia a ambos.'
               : 'Sé flexible pero cubre tus costos. Recuerda incluir materiales y tiempo.'}
           </p>
         </div>
+
+        {isFinalOffer && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 mt-4">
+            ⚠️ <strong>Oferta Final:</strong> Se ha alcanzado el límite de negociación. Debes aceptar o rechazar esta oferta.
+          </div>
+        )}
       </CardContent>
     </Card>
   );

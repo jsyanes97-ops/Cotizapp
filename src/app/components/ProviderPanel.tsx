@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Provider, Location } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -16,15 +17,23 @@ import { UserSettings } from './UserSettings';
 import { mockProviders } from '@/data/mockData';
 import { authService, providerProfileService } from '@/services';
 
-export function ProviderPanel() {
+export function ProviderPanel({ onLogout }: { onLogout?: () => void }) {
   const [activeTab, setActiveTab] = useState('solicitudes');
   const [hasNewRequests, setHasNewRequests] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ id?: string; name: string; email: string; phone?: string; location?: string; bio?: string; isPremium?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id?: string; name: string; email: string; phone?: string; location?: Location | string; bio?: string; isPremium?: boolean; membershipStatus?: 'free' | 'paid' } | null>(null);
 
   // Use authenticated user if available, otherwise mock
-  const currentProvider = isAuthenticated && currentUser ? { ...mockProviders[0], ...currentUser, id: currentUser.id || mockProviders[0].id, isPremium: currentUser.isPremium || false } : mockProviders[0];
+  const currentProvider: Provider = isAuthenticated && currentUser ? {
+    ...mockProviders[0],
+    ...currentUser,
+    id: currentUser.id || mockProviders[0].id,
+    isPremium: currentUser.isPremium ?? mockProviders[0].isPremium,
+    membershipStatus: currentUser.membershipStatus || (currentUser.isPremium ? 'paid' : 'free'),
+    location: (typeof currentUser.location === 'object' && currentUser.location !== null)
+      ? currentUser.location
+      : mockProviders[0].location
+  } as Provider : mockProviders[0];
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -44,7 +53,9 @@ export function ProviderPanel() {
             email: user.email,
             phone: user.telefono,
             ...profile.data,
-            isPremium: !!profile.data.esPremium // Explicit boolean conversion
+            isPremium: !!profile.data.esPremium, // Explicit boolean conversion
+            membershipStatus: !!profile.data.esPremium ? 'paid' : 'free',
+            location: profile.data.location || mockProviders[0].location
           });
         } catch (err) {
           console.error("Error fetching available profile", err);
@@ -53,7 +64,9 @@ export function ProviderPanel() {
             name: user.nombre,
             email: user.email,
             phone: user.telefono,
-            isPremium: false
+            isPremium: false,
+            membershipStatus: 'free',
+            location: mockProviders[0].location
           });
         }
       }
@@ -61,73 +74,16 @@ export function ProviderPanel() {
     checkAuth();
   }, []);
 
-  const handleLogin = async (email: string, password: string) => {
-    try {
-      const data = await authService.login(email, password);
-      // Backend should differentiate provider vs client. 
-      // For now assuming success allows login
-
-      // Fetch full profile immediately
-      let isPremium = false;
-      try {
-        const profile = await providerProfileService.getProfile();
-        isPremium = !!profile.data.esPremium;
-      } catch (e) { console.error(e) }
-
-      setCurrentUser({
-        id: data.user.id,
-        name: data.user.nombre,
-        email: email,
-        phone: data.user.telefono,
-        location: 'Panamá',
-        isPremium: isPremium
-      });
-      setIsAuthenticated(true);
-      setShowAuthModal(false);
-      alert('¡Inicio de sesión exitoso!');
-    } catch (error) {
-      console.error(error);
-      alert('Error al iniciar sesión. Verifica tus credenciales.');
-    }
-  };
-
-  const handleRegister = async (userData: RegisterData) => {
-    try {
-      await authService.register({
-        nombre: userData.name,
-        email: userData.email,
-        password: userData.password,
-        telefono: userData.phone,
-        tipoUsuario: 'Proveedor' // Force Provider role
-      });
-
-      // Auto-login
-      const loginData = await authService.login(userData.email, userData.password);
-      setCurrentUser({
-        id: loginData.user.id,
-        name: loginData.user.nombre,
-        email: userData.email,
-        phone: loginData.user.telefono,
-        location: 'Panamá',
-        isPremium: false
-      });
-      setIsAuthenticated(true);
-      setShowAuthModal(false);
-      alert('¡Cuenta creada y sesión iniciada!');
-    } catch (error: any) {
-      console.error(error);
-      alert('Error al registrar usuario: ' + (error.response?.data?.Error || error.message));
-    }
-  };
-
   const handleUpdateProfile = (profileData: any) => {
     console.log('Updating profile:', profileData);
     setCurrentUser(prev => prev ? { ...prev, ...profileData } : null);
   };
 
   const handleLogout = () => {
+    authService.logout();
     setCurrentUser(null);
     setIsAuthenticated(false);
+    if (onLogout) onLogout();
   };
 
   return (
@@ -174,16 +130,9 @@ export function ProviderPanel() {
                 <span className="sm:hidden">Salir</span>
               </Button>
             ) : (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setShowAuthModal(true)}
-                className="flex items-center gap-1 text-xs sm:text-sm"
-              >
-                <LogIn className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">Iniciar Sesión</span>
-                <span className="sm:hidden">Login</span>
-              </Button>
+              <div className="flex items-center gap-1 px-3 py-1 bg-gray-100 rounded text-gray-400 text-xs italic">
+                No autenticado
+              </div>
             )}
           </div>
         </div>
@@ -300,7 +249,10 @@ export function ProviderPanel() {
               {isAuthenticated && currentUser ? (
                 <UserSettings
                   userType="provider"
-                  currentUser={currentUser}
+                  currentUser={{
+                    ...currentUser,
+                    location: typeof currentUser?.location === 'string' ? currentUser.location : currentUser?.location?.address || ''
+                  }}
                   onUpdateProfile={handleUpdateProfile}
                   providerId={currentProvider.id}
                 />
@@ -311,24 +263,12 @@ export function ProviderPanel() {
                   <p className="text-sm sm:text-base text-gray-600 mb-4 text-center max-w-md">
                     Accede a tu cuenta para personalizar tu experiencia y gestionar tus preferencias
                   </p>
-                  <Button onClick={() => setShowAuthModal(true)} className="text-sm">
-                    <LogIn className="w-4 h-4 mr-2" />
-                    Iniciar Sesión
-                  </Button>
                 </div>
               )}
             </TabsContent>
           </div>
         </Tabs>
       </div>
-
-      {/* Auth Modal */}
-      <AuthModal
-        open={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onLogin={handleLogin}
-        onRegister={handleRegister}
-      />
     </div>
   );
 }
