@@ -14,6 +14,7 @@ import { ProviderNegotiations } from './provider/ProviderNegotiations';
 import { AuthModal, RegisterData } from './AuthModal';
 import { MembershipUpgradeWithLogic as MembershipUpgrade } from './provider/MembershipUpgrade';
 import { UserSettings } from './UserSettings';
+import { ChatList } from './chat/ChatList';
 import { mockProviders } from '@/data/mockData';
 import { authService, providerProfileService } from '@/services';
 
@@ -224,23 +225,8 @@ export function ProviderPanel({ onLogout }: { onLogout?: () => void }) {
 
             <TabsContent value="mensajes" className="mt-0">
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                    <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
-                    Mensajes con Clientes
-                  </CardTitle>
-                  <CardDescription className="text-xs sm:text-sm">
-                    Conversaciones activas con clientes que aceptaron tus cotizaciones
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 sm:py-12 text-gray-500">
-                    <MessageSquare className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm sm:text-base">No tienes conversaciones activas</p>
-                    <p className="text-xs sm:text-sm mt-1">
-                      Cuando un cliente acepte tu cotización, podrás chatear aquí
-                    </p>
-                  </div>
+                <CardContent className="p-0 sm:p-6">
+                  <ChatList userRole="proveedor" />
                 </CardContent>
               </Card>
             </TabsContent>

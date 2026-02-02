@@ -123,7 +123,7 @@ namespace Cotizapp.API.Controllers
         public string Type { get; set; } // 'Servicio' or 'Producto'
         public string Action { get; set; } // 'Aceptar', 'Rechazar', 'Contraoferta'
         public decimal? CounterOfferAmount { get; set; }
-        public string Message { get; set; }
+        public string? Message { get; set; }
     }
 
     public class ClientNegotiationResponseRequest
@@ -133,6 +133,6 @@ namespace Cotizapp.API.Controllers
         public string Type { get; set; } 
         public string Action { get; set; } 
         public decimal? CounterOfferAmount { get; set; }
-        public string Message { get; set; }
+        public string? Message { get; set; }
     }
 }

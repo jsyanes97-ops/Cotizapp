@@ -14,12 +14,15 @@ interface ProviderChatProps {
   serviceName: string;
   quotedPrice: number;
   negotiationId?: string;
+  negotiationCounter?: number;
   type?: string;
+  status?: string;
+  userRole?: 'cliente' | 'proveedor';
   onBack: () => void;
   onComplete?: () => void;
 }
 
-export function ProviderChat({ conversationId, providerName, serviceName, quotedPrice, negotiationId, type, onBack, onComplete }: ProviderChatProps) {
+export function ProviderChat({ conversationId, providerName, serviceName, quotedPrice, negotiationId, negotiationCounter, type, status, userRole, onBack, onComplete }: ProviderChatProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -31,14 +34,20 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   const [counterOfferAmount, setCounterOfferAmount] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
+  // Get current user and role to check permissions
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const storedRole = localStorage.getItem('userRole') || '';
+  const detectedRole = (userRole || storedRole || user.role || user.Role || 'cliente').toLowerCase();
+  const isProvider = detectedRole === 'proveedor' || detectedRole === 'provider';
+
   const fetchMessages = async () => {
     try {
       const res = await chatService.getMessages(conversationId);
       // Map basic fields
       const mapped = res.data.map((m: any) => ({
         id: m.Id || m.id,
-        sender: (m.EmisorId && JSON.parse(localStorage.getItem('user') || '{}').id &&
-          m.EmisorId.toString().toLowerCase() === JSON.parse(localStorage.getItem('user') || '{}').id.toString().toLowerCase())
+        sender: (m.EmisorId && user.id &&
+          m.EmisorId.toString().toLowerCase() === user.id.toString().toLowerCase())
           ? 'user' : 'other',
         content: m.Contenido,
         timestamp: new Date(m.FechaEnvio || m.timestamp),
@@ -53,9 +62,26 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   };
 
   useEffect(() => {
+    // Mark messages as read when opening the conversation
+    const markRead = async () => {
+      try {
+        await chatService.markAsRead(conversationId);
+      } catch (err) {
+        console.error('Error marking as read:', err);
+      }
+    };
+
+    markRead();
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
-    return () => clearInterval(interval);
+
+    // Set up intervals
+    const msgInterval = setInterval(fetchMessages, 3000);
+    const readInterval = setInterval(markRead, 5000); // Periodically mark as read while open
+
+    return () => {
+      clearInterval(msgInterval);
+      clearInterval(readInterval);
+    };
   }, [conversationId]);
 
   useEffect(() => {
@@ -63,7 +89,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   }, [messages]);
 
   const handleSend = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || chatDisabled) return;
     try {
       await chatService.sendMessage(conversationId, inputValue);
       setInputValue('');
@@ -93,9 +119,18 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   };
 
   const { isPending: isNegotiationPending, isRejected: isNegotiationRejected } = getNegotiationState();
-  const chatDisabled = isNegotiationPending || isNegotiationRejected;
 
-  const negotiationCount = messages.filter(m => m.type === 'Negociacion' || m.type === 'price_proposal').length;
+  // BLOCKING LOGIC:
+  // 1. If negotiation is rejected -> Blocked for everyone
+  // 2. If it is a provider AND the status is NOT 'Aceptada' (or subsequent states) -> Blocked
+  const statusLower = (status || '').toLowerCase();
+  const isAceptada = statusLower === 'aceptada' || statusLower === 'completada' || statusLower === 'finalizada';
+  const isNegotiationActive = !!negotiationId;
+
+  const chatDisabled = isNegotiationRejected || (isProvider && isNegotiationActive && !isAceptada);
+
+  // Use the backend provided counter instead of manual counting in fractional message history
+  const negotiationCount = negotiationCounter ?? 0;
   const limitReached = negotiationCount >= 3;
 
   const handleActionClick = (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
@@ -211,8 +246,8 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Negotiation Actions Overlay */}
-      {isNegotiationPending && (
+      {/* Negotiation Actions Overlay (Only for Client) */}
+      {isNegotiationPending && !isProvider && (
         <div className="absolute bottom-[80px] left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent">
           <Card className="bg-indigo-50 border-indigo-200 shadow-lg p-4 animate-in slide-in-from-bottom duration-300">
             <div className="flex items-center gap-2 mb-3 text-indigo-800 font-medium text-sm">
@@ -246,11 +281,15 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && !chatDisabled && handleSend()}
             placeholder={
-              isNegotiationPending
-                ? "Resuelve la oferta para chatear..."
-                : isNegotiationRejected
-                  ? "Chat cerrado (oferta rechazada)"
-                  : "Escribe un mensaje..."
+              isNegotiationRejected
+                ? "Chat cerrado (oferta rechazada)"
+                : isProvider && isNegotiationActive && !isAceptada
+                  ? (isNegotiationPending
+                    ? "Responde a la oferta en 'Negociaciones' para chatear..."
+                    : "Esperando a que el cliente acepte la oferta para chatear...")
+                  : isNegotiationPending
+                    ? "Resuelve la oferta para chatear..."
+                    : "Escribe un mensaje..."
             }
             className="flex-1"
             disabled={chatDisabled}

@@ -168,7 +168,13 @@ BEGIN
              WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
              WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
              ELSE 'active'
-        END as Status
+        END as Status,
+        -- Negotiation Counter
+        CASE 
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             ELSE 0
+        END as NegotiationCounter
     FROM tbl_Conversaciones c
     JOIN tbl_Usuarios u ON (c.ClienteId = u.Id OR c.ProveedorId = u.Id)
     WHERE (c.ClienteId = @UsuarioId OR c.ProveedorId = @UsuarioId)
@@ -181,6 +187,28 @@ BEGIN
 END";
                 connection.Execute(spGetConversations);
                 Console.WriteLine("sp_ObtenerConversacionesUsuario Refreshed.");
+
+                // 2.2 sp_MarcarMensajesComoLeidos
+                var spMarcarLeidos = @"
+CREATE OR ALTER PROCEDURE sp_MarcarMensajesComoLeidos
+    @ConversacionId UNIQUEIDENTIFIER,
+    @UsuarioId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- Mark all messages in this conversation as read for the current user
+    -- (messages sent by others, not by the user themselves)
+    UPDATE tbl_MensajesChat
+    SET Leido = 1
+    WHERE ConversacionId = @ConversacionId
+      AND EmisorId != @UsuarioId
+      AND Leido = 0;
+      
+    SELECT @@ROWCOUNT as MessagesMarked;
+END";
+                connection.Execute(spMarcarLeidos);
+                Console.WriteLine("sp_MarcarMensajesComoLeidos Refreshed.");
                 var spIniciarServicio = @"
 CREATE OR ALTER PROCEDURE sp_IniciarNegociacionServicio
     @ServicioId UNIQUEIDENTIFIER,
@@ -971,6 +999,54 @@ END";
                 connection.Execute(spGestionarProducto);
                 Console.WriteLine("sp_GestionarNegociacionProducto Refreshed.");
 
+                // 3.6 sp_ObtenerNegociacionesProveedor
+                var spObtenerNegocProv = @"
+CREATE OR ALTER PROCEDURE sp_ObtenerNegociacionesProveedor
+    @ProveedorId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT 
+        'Servicio' as TipoRelacion,
+        N.Id,
+        S.Id as ItemId,
+        S.Titulo as ItemTitulo,
+        U.Nombre as ClienteNombre,
+        N.PrecioOriginal,
+        N.OfertaActual,
+        N.UltimoEmisorId,
+        N.Estado,
+        N.ContadorContraofertas,
+        N.FechaActualizacion
+    FROM tbl_NegociacionesServicio N
+    JOIN tbl_ServiciosOfrecidos S ON N.ServicioId = S.Id
+    JOIN tbl_Usuarios U ON N.ClienteId = U.Id
+    WHERE S.ProveedorId = @ProveedorId
+
+    UNION ALL
+
+    SELECT 
+        'Producto' as TipoRelacion,
+        N.Id,
+        P.Id as ItemId,
+        P.Titulo as ItemTitulo,
+        U.Nombre as ClienteNombre,
+        N.PrecioOriginal,
+        N.OfertaActual,
+        N.UltimoEmisorId,
+        N.Estado,
+        N.ContadorContraofertas,
+        N.FechaActualizacion
+    FROM tbl_NegociacionesProducto N
+    JOIN tbl_Productos P ON N.ProductoId = P.Id
+    JOIN tbl_Usuarios U ON N.ClienteId = U.Id
+    WHERE P.ProveedorId = @ProveedorId
+    
+    ORDER BY FechaActualizacion DESC;
+END";
+                connection.Execute(spObtenerNegocProv);
+                Console.WriteLine("sp_ObtenerNegociacionesProveedor Created/Updated.");
             }
             catch (Exception ex)
             {

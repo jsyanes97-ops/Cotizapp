@@ -95,6 +95,10 @@ export interface ChatConversation {
   status: 'active' | 'completed' | 'cancelled';
   serviceCategory: string;
   quotedPrice: number;
+  negotiationId?: string;
+  negotiationCounter?: number;
+  type?: string;
+  rawStatus?: string;
 }
 
 export interface ServiceRequestHistory {

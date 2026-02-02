@@ -33,7 +33,30 @@ export function ProviderNegotiations() {
         try {
             setIsLoading(true);
             const res = await providerNegotiationService.getAll();
-            setNegotiations(res.data);
+
+            // Sort negotiations by status priority
+            const statusPriority: Record<string, number> = {
+                'Pendiente': 1,
+                'Contraoferta': 2,
+                'Negociando': 3,
+                'Aceptada': 4,
+                'Rechazada': 5
+            };
+
+            const sortedNegotiations = res.data.sort((a: NegotiationItem, b: NegotiationItem) => {
+                const priorityA = statusPriority[a.estado] || 999;
+                const priorityB = statusPriority[b.estado] || 999;
+
+                // First sort by status priority
+                if (priorityA !== priorityB) {
+                    return priorityA - priorityB;
+                }
+
+                // Then sort by date (most recent first) within the same status
+                return new Date(b.fechaActualizacion).getTime() - new Date(a.fechaActualizacion).getTime();
+            });
+
+            setNegotiations(sortedNegotiations);
         } catch (error) {
             console.error("Error fetching negotiations:", error);
         } finally {
@@ -61,18 +84,35 @@ export function ProviderNegotiations() {
                 message: action === 'Contraoferta' ? counterMessage : undefined
             };
 
-            await providerNegotiationService.respond(payload);
+            const response = await providerNegotiationService.respond(payload);
 
-            alert(`Acción "${action}" realizada exitosamente.`);
+            // Clear counter offer state
             setCounterOfferId(null);
             setCounterAmount('');
             setCounterMessage('');
-            fetchNegotiations(); // Refresh list
+
+            // Refresh list
+            await fetchNegotiations();
+
+            // Provide specific feedback based on action
+            if (action === 'Aceptar') {
+                alert(`✅ Oferta aceptada exitosamente!\n\nAhora puedes coordinar el servicio con ${negotiation.clienteNombre} en la sección de Mensajes.`);
+                // Optionally, you could navigate to the messages tab here
+                // For now, we'll just show the alert
+            } else if (action === 'Rechazar') {
+                alert(`❌ Oferta rechazada.\n\nSe ha notificado a ${negotiation.clienteNombre} sobre tu decisión.`);
+            } else if (action === 'Contraoferta') {
+                alert(`💬 Contraoferta enviada exitosamente!\n\nEl cliente ${negotiation.clienteNombre} recibirá tu propuesta de $${counterAmount}.`);
+            }
 
         } catch (error: any) {
-            console.error("Error responding:", error);
-            const msg = error.response?.data?.Error || 'Error al procesar la acción';
-            alert(`Error: ${msg}`);
+            console.error("Error responding to negotiation:", error);
+            console.error("Error response:", error.response);
+            console.error("Error data:", error.response?.data);
+            console.error("Full error object:", JSON.stringify(error, null, 2));
+
+            const msg = error.response?.data?.Error || error.response?.data?.error || error.response?.data?.Message || error.message || 'Error al procesar la acción';
+            alert(`❌ Error: ${msg}\n\nRevisa la consola del navegador (F12) para más detalles.`);
         }
     };
 
@@ -87,7 +127,7 @@ export function ProviderNegotiations() {
                         Centro de Negociaciones
                     </CardTitle>
                     <p className="text-sm text-gray-600">
-                        Gestiona las ofertas de tus clientes. Recuerda que tienes un límite de 2 contraofertas por negociación.
+                        Gestiona las ofertas de tus clientes. Recuerda que tienes un límite de 3 contraofertas por negociación.
                     </p>
                 </CardHeader>
             </Card>
@@ -141,7 +181,7 @@ export function ProviderNegotiations() {
                                             <>
                                                 {counterOfferId === item.id ? (
                                                     <div className="bg-blue-50 p-3 rounded-md space-y-2 animate-in fade-in zoom-in-95">
-                                                        <p className="text-sm font-semibold">Tu Contraoferta ({item.contadorContraofertas}/2)</p>
+                                                        <p className="text-sm font-semibold">Tu Contraoferta ({item.contadorContraofertas}/3)</p>
                                                         <Input
                                                             type="number"
                                                             placeholder="Monto"

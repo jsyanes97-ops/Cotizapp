@@ -76,6 +76,20 @@ namespace Cotizapp.API.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
+        [HttpPost("mark-read/{conversationId}/{userId}")]
+        public async Task<IActionResult> MarkAsRead(Guid conversationId, Guid userId)
+        {
+            try
+            {
+                await _db.EditData("sp_MarcarMensajesComoLeidos", new { ConversacionId = conversationId, UsuarioId = userId });
+                return Ok(new { Status = "Marked as read" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
     }
 
     public class MessageDto

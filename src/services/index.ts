@@ -170,5 +170,9 @@ export const chatService = {
     deleteConversation: async (conversationId: string) => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
         return api.delete(`/chat/delete/${conversationId}/${user.id}`);
+    },
+    markAsRead: async (conversationId: string) => {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return api.post(`/chat/mark-read/${conversationId}/${user.id}`);
     }
 };

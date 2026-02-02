@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/ta
 import { Button } from '@/app/components/ui/button';
 import { MessageSquare, Users, History, ShoppingBag, Package2, LogIn, Settings } from 'lucide-react';
 import { ChatContainer } from './ChatContainer';
-import { ChatList } from './client/ChatList';
+import { ChatList } from './chat/ChatList';
 import { RequestHistory } from './client/RequestHistory';
 import { ServiceMarketplace } from './client/ServiceMarketplace';
 import { ProductMarketplace } from './client/ProductMarketplace';
@@ -120,7 +120,7 @@ export function ClientDashboard({ onLogout }: { onLogout?: () => void }) {
         </TabsContent>
 
         <TabsContent value="my-chats" className="flex-1 mt-0 overflow-y-auto p-2 sm:p-4">
-          <ChatList />
+          <ChatList userRole="cliente" />
         </TabsContent>
 
         <TabsContent value="history" className="flex-1 mt-0 overflow-y-auto p-2 sm:p-4">
