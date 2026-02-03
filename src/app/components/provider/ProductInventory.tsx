@@ -80,7 +80,8 @@ export function ProductInventory() {
         createdAt: p.fechaCreacion,
         providerId: p.proveedorId,
         location: { district: 'Panamá' },
-        specifications: p.especificacionesJson ? JSON.parse(p.especificacionesJson) : undefined
+        specifications: p.especificacionesJson ? JSON.parse(p.especificacionesJson) : undefined,
+        images: p.imagenesJson ? JSON.parse(p.imagenesJson) : []
       }));
       setProducts(mapped);
     } catch (error) {
@@ -107,8 +108,11 @@ export function ProductInventory() {
     allowNegotiation: false,
     minNegotiablePrice: '',
     tags: '',
-    specifications: ''
+    specifications: '',
+    images: [] as string[]
   });
+
+  const [newImageUrl, setNewImageUrl] = useState('');
 
   const activeProducts = products.filter(p => p.isActive);
   const inactiveProducts = products.filter(p => !p.isActive);
@@ -149,9 +153,41 @@ export function ProductInventory() {
       tags: product.tags.join(', '),
       specifications: product.specifications
         ? Object.entries(product.specifications).map(([k, v]) => `${k}: ${v}`).join('\n')
-        : ''
+        : '',
+      images: product.images || []
     });
     setIsDialogOpen(true);
+  };
+
+  const handleAddImageUrl = () => {
+    if (newImageUrl.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, newImageUrl.trim()]
+      }));
+      setNewImageUrl('');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          images: [...prev.images, reader.result as string]
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSubmit = async () => {
@@ -183,7 +219,8 @@ export function ProductInventory() {
         permitirNegociacion: formData.allowNegotiation,
         precioMinimoNegociable: formData.minNegotiablePrice ? parseFloat(formData.minNegotiablePrice) : null,
         etiquetas: formData.tags,
-        especificacionesJson: Object.keys(specs).length > 0 ? JSON.stringify(specs) : null
+        especificacionesJson: Object.keys(specs).length > 0 ? JSON.stringify(specs) : null,
+        imagenesJson: JSON.stringify(formData.images)
       });
 
       setIsDialogOpen(false);
@@ -199,7 +236,8 @@ export function ProductInventory() {
         allowNegotiation: false,
         minNegotiablePrice: '',
         tags: '',
-        specifications: ''
+        specifications: '',
+        images: []
       });
       fetchProducts();
       alert('Producto guardado exitosamente');
@@ -243,7 +281,8 @@ export function ProductInventory() {
                       allowNegotiation: false,
                       minNegotiablePrice: '',
                       tags: '',
-                      specifications: ''
+                      specifications: '',
+                      images: []
                     });
                   }}
                 >
@@ -258,6 +297,55 @@ export function ProductInventory() {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
+                  {/* Imagen del Producto */}
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">Imagen del Producto (Referencial)</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs">Por Link (URL)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="https://ejemplo.com/imagen.jpg"
+                            value={newImageUrl}
+                            onChange={(e) => setNewImageUrl(e.target.value)}
+                          />
+                          <Button size="sm" onClick={handleAddImageUrl} type="button">
+                            Agregar
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Desde Archivo</Label>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {formData.images.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto py-2">
+                        {formData.images.map((img, idx) => (
+                          <div key={idx} className="relative w-20 h-20 flex-shrink-0 group">
+                            <img
+                              src={img}
+                              alt={`Preview ${idx}`}
+                              className="w-full h-full object-cover rounded-md border"
+                            />
+                            <button
+                              onClick={() => handleRemoveImage(idx)}
+                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Categoría *</Label>
@@ -408,7 +496,7 @@ export function ProductInventory() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
@@ -469,8 +557,22 @@ export function ProductInventory() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className="text-4xl">{getCategoryIcon(product.category)}</div>
+                    <div className="flex items-start gap-4 mb-3">
+                      {/* Imagen Miniatura */}
+                      <div className="w-24 h-24 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden border">
+                        {product.images && product.images.length > 0 ? (
+                          <img
+                            src={product.images[0]}
+                            alt={product.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-4xl">
+                            {getCategoryIcon(product.category)}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="font-semibold text-lg">{product.title}</h4>
@@ -570,8 +672,22 @@ export function ProductInventory() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-start gap-3">
-                      <div className="text-3xl">{getCategoryIcon(product.category)}</div>
+                    <div className="flex items-start gap-4">
+                      {/* Imagen Miniatura */}
+                      <div className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden border">
+                        {product.images && product.images.length > 0 ? (
+                          <img
+                            src={product.images[0]}
+                            alt={product.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-3xl opacity-50">
+                            {getCategoryIcon(product.category)}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex-1">
                         <h4 className="font-semibold text-lg mb-1 text-gray-700">{product.title}</h4>
                         <div className="flex items-center gap-2 mb-2">
