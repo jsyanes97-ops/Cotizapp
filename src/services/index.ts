@@ -96,6 +96,15 @@ export const marketplaceService = {
             offerAmount,
             message
         });
+    },
+    purchaseProduct: async (productId: string, quantity: number, message?: string) => {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return api.post('/products/purchase', {
+            productId,
+            clientId: user.id,
+            quantity,
+            message
+        });
     }
 };
 

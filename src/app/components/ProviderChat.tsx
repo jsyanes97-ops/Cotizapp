@@ -34,6 +34,9 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   const [counterOfferAmount, setCounterOfferAmount] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
+  // Local status state to override prop when client accepts
+  const [localStatus, setLocalStatus] = useState<string | undefined>(undefined);
+
   // Get current user and role to check permissions
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const storedRole = localStorage.getItem('userRole') || '';
@@ -118,16 +121,21 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     return { isPending, isRejected, isAccepted };
   };
 
+
   const { isPending: isNegotiationPending, isRejected: isNegotiationRejected } = getNegotiationState();
 
   // BLOCKING LOGIC:
   // 1. If negotiation is rejected -> Blocked for everyone
-  // 2. If it is a provider AND the status is NOT 'Aceptada' (or subsequent states) -> Blocked
-  const statusLower = (status || '').toLowerCase();
+  // 2. If there's an active negotiation AND status is NOT 'Aceptada' -> Blocked for BOTH client and provider
+  // 3. If no negotiation (direct purchase) OR negotiation is accepted -> Unlocked for both
+  // Use localStatus if available (updated when client accepts), otherwise use prop status
+  const currentStatus = localStatus || status || '';
+  const statusLower = currentStatus.toLowerCase();
   const isAceptada = statusLower === 'aceptada' || statusLower === 'completada' || statusLower === 'finalizada';
   const isNegotiationActive = !!negotiationId;
 
-  const chatDisabled = isNegotiationRejected || (isProvider && isNegotiationActive && !isAceptada);
+  // Block chat for BOTH roles if there's an active negotiation that hasn't been accepted
+  const chatDisabled = isNegotiationRejected || (isNegotiationActive && !isAceptada);
 
   // Use the backend provided counter instead of manual counting in fractional message history
   const negotiationCount = negotiationCounter ?? 0;
@@ -172,7 +180,21 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       setActionType(null);
       setCounterOfferAmount('');
       setActionMessage('');
-      fetchMessages(); // Refresh chat
+
+      // Handle different actions
+      if (actionType === 'Aceptar') {
+        // Update local status to unlock chat immediately without leaving
+        setLocalStatus('Aceptada');
+        fetchMessages(); // Refresh to show acceptance message
+      } else if (actionType === 'Rechazar') {
+        // Go back to chat list when rejecting
+        if (onBack) {
+          onBack();
+        }
+      } else {
+        // For counteroffers, just refresh messages
+        fetchMessages();
+      }
 
     } catch (error: any) {
       alert('Error: ' + (error.response?.data?.Error || error.message));

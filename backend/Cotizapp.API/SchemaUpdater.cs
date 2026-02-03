@@ -99,6 +99,14 @@ namespace Cotizapp.API
 
                 Console.WriteLine("Schema Verification Complete.");
                 
+                // Fix existing conversations that don't have visibility flags set
+                var fixVisibility = @"
+                    UPDATE tbl_Conversaciones 
+                    SET VisibleParaCliente = 1, VisibleParaProveedor = 1 
+                    WHERE VisibleParaCliente = 0 OR VisibleParaProveedor = 0";
+                connection.Execute(fixVisibility);
+                Console.WriteLine("Existing conversations visibility fixed.");
+                
                 // 3. Ensure SPs are correct (Nuclear Option: Fix ALL Negotiation SPs)
                 
                 // 3.1 sp_GetOrCreateConversation
@@ -120,14 +128,18 @@ BEGIN
     IF @ConversacionId IS NULL
     BEGIN
         SET @ConversacionId = NEWID();
-        INSERT INTO tbl_Conversaciones (Id, ClienteId, ProveedorId, TipoRelacion, RelacionId)
-        VALUES (@ConversacionId, @ClienteId, @ProveedorId, @TipoRelacion, @RelacionId);
+        INSERT INTO tbl_Conversaciones (Id, ClienteId, ProveedorId, TipoRelacion, RelacionId, VisibleParaCliente, VisibleParaProveedor)
+        VALUES (@ConversacionId, @ClienteId, @ProveedorId, @TipoRelacion, @RelacionId, 1, 1);
     END
 
     -- Return for legacy/Dapper compatibility
     SELECT @ConversacionId;
 END";
                 // 3. Ensure SPs are correct (Nuclear Option: Fix ALL Negotiation SPs)
+                
+                // Execute sp_GetOrCreateConversation
+                connection.Execute(spGetOrCreate);
+                Console.WriteLine("sp_GetOrCreateConversation Refreshed.");
                 
                 // 5. SP: Get User Conversations (Client or Provider) - UPDATED
                 var spGetConversations = @"

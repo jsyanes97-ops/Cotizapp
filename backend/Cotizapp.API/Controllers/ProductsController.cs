@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Cotizapp.API.Services;
 using Cotizapp.API.Models;
+using Dapper;
 
 namespace Cotizapp.API.Controllers
 {
@@ -131,6 +132,82 @@ namespace Cotizapp.API.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
+        [HttpPost("purchase")]
+        public async Task<IActionResult> PurchaseProduct([FromBody] PurchaseProductRequest req)
+        {
+            try
+            {
+                // Get product details from active products
+                var products = await _db.GetAllAsync<ProductDto>("sp_ObtenerProductosActivos", new { });
+                var product = products.FirstOrDefault(p => p.Id == req.ProductId);
+                
+                if (product == null)
+                {
+                    return BadRequest(new { Error = "Producto no encontrado o no está activo" });
+                }
+
+                Console.WriteLine($"Product found: {product.Titulo}, Provider: {product.ProveedorId}");
+
+                // Get or create conversation
+                var conversationResult = await _db.GetAllAsync<Guid>("sp_GetOrCreateConversation", new
+                {
+                    ClienteId = req.ClientId,
+                    ProveedorId = product.ProveedorId,
+                    TipoRelacion = "Producto",
+                    RelacionId = req.ProductId
+                });
+
+                var conversationId = conversationResult.FirstOrDefault();
+                Console.WriteLine($"Conversation ID: {conversationId}");
+                
+                if (conversationId == Guid.Empty)
+                {
+                    return BadRequest(new { Error = "No se pudo crear la conversación" });
+                }
+
+                // Create purchase message
+                decimal total = product.Precio * req.Quantity;
+                string messageContent = $"Compra directa: {req.Quantity}x {product.Titulo} - Total: ${total:F2}";
+                
+                if (!string.IsNullOrEmpty(req.Message))
+                {
+                    messageContent += $"\n\nMensaje del cliente: {req.Message}";
+                }
+
+                Console.WriteLine($"Creating message in conversation {conversationId}");
+
+                // Insert message using direct SQL
+                using (var connection = _db.CreateConnection())
+                {
+                    await connection.ExecuteAsync(
+                        "INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo) VALUES (@ConversacionId, @EmisorId, @Contenido, @Tipo)",
+                        new
+                        {
+                            ConversacionId = conversationId,
+                            EmisorId = req.ClientId,
+                            Contenido = messageContent,
+                            Tipo = "Compra"
+                        },
+                        commandType: System.Data.CommandType.Text
+                    );
+                }
+
+                Console.WriteLine("Purchase completed successfully");
+
+                return Ok(new { 
+                    ConversationId = conversationId, 
+                    Message = "Compra realizada exitosamente",
+                    Total = total
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in PurchaseProduct: {ex.Message}");
+                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
     }
     
     public class NegotiateProductRequest
@@ -139,6 +216,14 @@ namespace Cotizapp.API.Controllers
         public Guid ClientId { get; set; }
         public decimal OfferAmount { get; set; }
         public string Message { get; set; }
+    }
+
+    public class PurchaseProductRequest
+    {
+        public Guid ProductId { get; set; }
+        public Guid ClientId { get; set; }
+        public int Quantity { get; set; }
+        public string? Message { get; set; }
     }
 
 

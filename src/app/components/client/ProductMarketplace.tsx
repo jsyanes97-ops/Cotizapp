@@ -141,10 +141,37 @@ export function ProductMarketplace() {
     return matchesSearch && matchesCategory && product.isActive;
   });
 
-  const handleBuyNow = (product: ProductListing) => {
-    alert(`✅ Compra realizada!\n\nProducto: ${product.title}\nCantidad: ${purchaseQuantity}\nTotal: $${(product.price * purchaseQuantity).toFixed(2)}\n\nEl vendedor ${product.providerName} se contactará contigo pronto.`);
-    setSelectedProduct(null);
-    setPurchaseQuantity(1);
+  const handleBuyNow = async (product: ProductListing) => {
+    if (!product) return;
+
+    try {
+      const response = await marketplaceService.purchaseProduct(
+        product.id,
+        purchaseQuantity,
+        `Solicitud de compra de ${purchaseQuantity} unidad(es)`
+      );
+
+      const total = (product.price * purchaseQuantity).toFixed(2);
+
+      alert(`✅ ¡Compra realizada exitosamente!\n\nProducto: ${product.title}\nCantidad: ${purchaseQuantity}\nTotal: $${total}\n\n📬 Se ha creado una conversación con ${product.providerName}.\nPuedes chatear con el vendedor en la sección "Mensajes".`);
+
+      // Clean up
+      setSelectedProduct(null);
+      setPurchaseQuantity(1);
+
+    } catch (error: any) {
+      console.error('Purchase Error:', error);
+      console.error('Error Response:', error.response?.data);
+      console.error('Error Status:', error.response?.status);
+      let msg = 'Error al realizar la compra';
+
+      const data = error.response?.data;
+      if (data) {
+        if (data.Error) msg = data.Error;
+        else if (data.message) msg = data.message;
+      }
+      alert(`❌ ${msg}`);
+    }
   };
 
   const handleNegotiate = (product: ProductListing) => {
@@ -240,8 +267,21 @@ export function ProductMarketplace() {
         {filteredProducts.map((product) => (
           <Card key={product.id} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedProduct(product)}>
             <CardContent className="p-4">
-              <div className="text-center mb-3">
-                <div className="text-5xl mb-2">{getCategoryIcon(product.category)}</div>
+              {/* Product Image */}
+              <div className="mb-3">
+                <div className="w-full h-48 bg-gray-100 rounded-lg overflow-hidden border mb-2">
+                  {product.images && product.images.length > 0 ? (
+                    <img
+                      src={product.images[0]}
+                      alt={product.title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-6xl">
+                      {getCategoryIcon(product.category)}
+                    </div>
+                  )}
+                </div>
                 {product.originalPrice && product.originalPrice > product.price && (
                   <Badge className="bg-red-500 mb-2">
                     AHORRA {Math.round((1 - product.price / product.originalPrice) * 100)}%
@@ -328,6 +368,32 @@ export function ProductMarketplace() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                {/* Product Images Gallery */}
+                {selectedProduct.images && selectedProduct.images.length > 0 && (
+                  <div className="w-full">
+                    <div className="relative w-full h-64 bg-gray-100 rounded-lg overflow-hidden border">
+                      <img
+                        src={selectedProduct.images[0]}
+                        alt={selectedProduct.title}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    {selectedProduct.images.length > 1 && (
+                      <div className="flex gap-2 mt-2 overflow-x-auto">
+                        {selectedProduct.images.slice(1, 5).map((img, idx) => (
+                          <div key={idx} className="w-16 h-16 flex-shrink-0 bg-gray-100 rounded border overflow-hidden">
+                            <img
+                              src={img}
+                              alt={`${selectedProduct.title} ${idx + 2}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Price and Discount */}
                 <div className="flex items-center gap-3">
                   {selectedProduct.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
