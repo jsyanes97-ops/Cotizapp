@@ -31,12 +31,18 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const [counterAmount, setCounterAmount] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Standardize properties to handle both PascalCase (backend) and camelCase (frontend)
+    // Helper to get value regardless of casing
+    const getVal = (obj: any, key: string) => {
+        if (!obj) return undefined;
+        const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+        return foundKey ? obj[foundKey] : undefined;
+    };
+
     const neg = negotiation as any;
-    const estado = (neg.Estado ?? neg.estado ?? "").toString().trim();
-    const ultimoEmisorId = neg.UltimoEmisorId ?? neg.ultimoEmisorId;
-    const normalizedLastSender = ultimoEmisorId?.toLowerCase();
-    const normalizedCurrentUser = currentUserId?.toLowerCase();
+    const estado = (getVal(neg, 'Estado') ?? getVal(neg, 'estado') ?? "").toString().trim();
+    const ultimoEmisorId = getVal(neg, 'UltimoEmisorId') ?? getVal(neg, 'ultimoEmisorId');
+    const normalizedLastSender = ultimoEmisorId?.toString().toLowerCase().trim();
+    const normalizedCurrentUser = currentUserId?.toString().toLowerCase().trim();
 
     // Client turn logic: 
     // 1. It's the client's turn if they are NOT the last person who sent an offer/quote.
@@ -49,11 +55,11 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
         (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente');
 
     // Check both camelCase and PascalCase to be safe with Dapper/JSON serialization
-    const count = neg.ContadorContraofertas ?? neg.contadorContraofertas ?? 0;
+    const count = getVal(neg, 'ContadorContraofertas') ?? getVal(neg, 'contadorContraofertas') ?? 0;
     const limitReached = count >= 10;
-    const isNegotiable = neg.EsNegociable ?? neg.esNegociable ?? true;
+    const isNegotiable = getVal(neg, 'EsNegociable') ?? getVal(neg, 'esNegotiable') ?? true;
 
-    console.log('[NegotiationStatusCard] Render details:', {
+    console.log('[NegotiationStatusCard] DEBUG:', {
         estado,
         ultimoEmisorId,
         currentUserId,
@@ -234,6 +240,14 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                             </div>
                         </div>
                     )}
+                </CardFooter>
+            )}
+
+            {!isClientTurn && (estado.toLowerCase() === 'pendiente' || estado.toLowerCase() === 'contraoferta') && (
+                <CardFooter className="pt-0 pb-2">
+                    <p className="text-[10px] text-gray-400 text-center w-full italic">
+                        Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normalizedLastSender?.substring(0, 5)})
+                    </p>
                 </CardFooter>
             )}
         </Card>

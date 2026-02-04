@@ -58,12 +58,13 @@ export function ClientChat({ chatId, onChatUpdate }: ClientChatProps = {}) {
   // Fetch Context on Load / Chat Change
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    // Normalize user ID to always have a lowercase 'id' property
+    // Normalize user ID with comprehensive fallbacks
     const normalizedUser = {
       ...user,
-      id: user.id || user.Id || user.ID
+      id: user.id || user.Id || user.ID || user.uid || user.sub || user.IdUsuario
     };
     setCurrentUser(normalizedUser);
+    setNegotiationContext(null); // Clear context when switching chats
 
     if (chatId) {
       fetchNegotiationContext();
@@ -350,16 +351,16 @@ export function ClientChat({ chatId, onChatUpdate }: ClientChatProps = {}) {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder={
-              negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada'
+              negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada' && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'completada'
                 ? "Chat bloqueado hasta aceptar la oferta..."
                 : "Escribe aquí..."
             }
             className="flex-1"
-            disabled={negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada'}
+            disabled={negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada' && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'completada'}
           />
           <Button
             onClick={handleSend}
-            disabled={!inputValue.trim() || (negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada')}
+            disabled={!inputValue.trim() || (negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada' && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'completada')}
           >
             <Send className="w-5 h-5" />
           </Button>
