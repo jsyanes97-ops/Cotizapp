@@ -38,14 +38,19 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const normalizedLastSender = ultimoEmisorId?.toLowerCase();
     const normalizedCurrentUser = currentUserId?.toLowerCase();
 
-    // Client turn: It's NOT the user's turn if they sent the last message, 
-    // AND the status is either 'Pendiente' (Initial provider offer) or 'Contraoferta' (Provider counter-offer)
-    const isClientTurn = normalizedLastSender !== normalizedCurrentUser &&
+    // Client turn logic: 
+    // 1. It's the client's turn if they are NOT the last person who sent an offer/quote.
+    // 2. AND the state is 'Pendiente' (first offer) or 'Contraoferta' (provider counter-offer).
+    // Note: We use .toLowerCase() and .trim() to avoid any string mismatch issues.
+    const isClientTurn =
+        normalizedCurrentUser &&
+        normalizedLastSender &&
+        normalizedLastSender !== normalizedCurrentUser &&
         (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente');
 
     // Check both camelCase and PascalCase to be safe with Dapper/JSON serialization
     const count = neg.ContadorContraofertas ?? neg.contadorContraofertas ?? 0;
-    const limitReached = count >= 3;
+    const limitReached = count >= 10;
     const isNegotiable = neg.EsNegociable ?? neg.esNegociable ?? true;
 
     console.log('[NegotiationStatusCard] Render details:', {

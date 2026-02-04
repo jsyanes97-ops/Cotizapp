@@ -58,7 +58,12 @@ export function ClientChat({ chatId, onChatUpdate }: ClientChatProps = {}) {
   // Fetch Context on Load / Chat Change
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    setCurrentUser(user);
+    // Normalize user ID to always have a lowercase 'id' property
+    const normalizedUser = {
+      ...user,
+      id: user.id || user.Id || user.ID
+    };
+    setCurrentUser(normalizedUser);
 
     if (chatId) {
       fetchNegotiationContext();

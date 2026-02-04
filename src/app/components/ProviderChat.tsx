@@ -139,7 +139,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
 
   // Use the backend provided counter instead of manual counting in fractional message history
   const negotiationCount = negotiationCounter ?? 0;
-  const limitReached = negotiationCount >= 3;
+  const limitReached = negotiationCount >= 10;
 
   const handleActionClick = (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
     setActionType(action);
@@ -334,7 +334,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
             <DialogDescription>
               {actionType === 'Aceptar' && 'Estás a punto de aceptar la oferta del proveedor. ¿Confirmas?'}
               {actionType === 'Rechazar' && 'Estás a punto de rechazar la oferta. Esto podría finalizar la negociación. ¿Confirmas?'}
-              {actionType === 'Contraoferta' && 'Ingresa tu nueva oferta. Recuerda que tienes un límite de 2 contraofertas.'}
+              {actionType === 'Contraoferta' && 'Ingresa tu nueva oferta. Recuerda que tienes un límite de 10 contraofertas.'}
             </DialogDescription>
           </DialogHeader>
 
