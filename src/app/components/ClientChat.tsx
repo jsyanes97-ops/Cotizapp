@@ -102,7 +102,7 @@ export function ClientChat({ chatId, onChatUpdate }: ClientChatProps = {}) {
           sender: isUser ? 'user' : 'other',
           content: msgContent,
           timestamp: new Date(msgDate),
-          type: msgType === 'Negociacion' ? 'text' : (msgType === 'Imagen' ? 'image' : 'text')
+          type: msgType === 'Negociacion' ? 'text' : (msgType === 'Imagen' ? 'image' : msgType)
         };
       });
       setMessages(mappedMessages);

@@ -915,7 +915,7 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 4
+        IF @CounterCount >= 3
         BEGIN
              SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
              RETURN;
@@ -1251,7 +1251,7 @@ BEGIN
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
         -- Check Limit (Max 5 total counter-offers/messages)
-        IF @CounterCount >= 10
+        IF @CounterCount >= 3
         BEGIN
             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;
@@ -1335,7 +1335,7 @@ BEGIN
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 10
+        IF @CounterCount >= 3
         BEGIN
             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;

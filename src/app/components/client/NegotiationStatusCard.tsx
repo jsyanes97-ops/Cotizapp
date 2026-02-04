@@ -31,6 +31,14 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const [counterAmount, setCounterAmount] = useState('');
     const [loading, setLoading] = useState(false);
 
+    const [localActionTaken, setLocalActionTaken] = useState(false);
+
+    // Robust ID normalization (handles braces, casing, spaces)
+    const normalizeId = (id: any) => {
+        if (!id) return "";
+        return id.toString().toLowerCase().replace(/[{}]/g, "").trim();
+    };
+
     // Helper to get value regardless of casing
     const getVal = (obj: any, key: string) => {
         if (!obj) return undefined;
@@ -41,30 +49,46 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const neg = negotiation as any;
     const estado = (getVal(neg, 'Estado') ?? getVal(neg, 'estado') ?? "").toString().trim();
     const ultimoEmisorId = getVal(neg, 'UltimoEmisorId') ?? getVal(neg, 'ultimoEmisorId');
-    const normalizedLastSender = ultimoEmisorId?.toString().toLowerCase().trim();
-    const normalizedCurrentUser = currentUserId?.toString().toLowerCase().trim();
+
+    // Normalize and compare
+    const normLastSender = normalizeId(ultimoEmisorId);
+    const normCurrentUser = normalizeId(currentUserId);
+
+    const clienteId = getVal(neg, 'ClienteId') ?? getVal(neg, 'clienteId');
+    const normClienteId = normalizeId(clienteId);
+
+    // Reset localActionTaken ONLY once the server confirms WE are the last sender
+    // (meaning our action was registered) or the negotiation finalized.
+    if (localActionTaken && (normLastSender === normCurrentUser || !['pendiente', 'contraoferta'].includes(estado.toLowerCase()))) {
+        setLocalActionTaken(false);
+    }
 
     // Client turn logic: 
-    // 1. It's the client's turn if they are NOT the last person who sent an offer/quote.
-    // 2. AND the state is 'Pendiente' (first offer) or 'Contraoferta' (provider counter-offer).
-    // Note: We use .toLowerCase() and .trim() to avoid any string mismatch issues.
+    // 1. MUST NOT have already acted locally in this render cycle
+    // 2. MUST be the client (currentUser matching the negotiation's client property)
+    // 3. AND the last person who acted MUST NOT be the current user
+    // 4. AND the state is 'Pendiente' or 'Contraoferta'
     const isClientTurn =
-        normalizedCurrentUser &&
-        normalizedLastSender &&
-        normalizedLastSender !== normalizedCurrentUser &&
+        !localActionTaken &&
+        normCurrentUser &&
+        normCurrentUser === normClienteId &&
+        normLastSender &&
+        normLastSender !== normCurrentUser &&
         (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente');
 
     // Check both camelCase and PascalCase to be safe with Dapper/JSON serialization
     const count = getVal(neg, 'ContadorContraofertas') ?? getVal(neg, 'contadorContraofertas') ?? 0;
-    const limitReached = count >= 10;
+    const limitReached = count >= 3;
     const isNegotiable = getVal(neg, 'EsNegociable') ?? getVal(neg, 'esNegotiable') ?? true;
 
-    console.log('[NegotiationStatusCard] DEBUG:', {
+    console.log('[NegotiationStatusCard] DEBUG v7:', {
         estado,
-        ultimoEmisorId,
-        currentUserId,
+        normLastSender,
+        normCurrentUser,
+        normClienteId,
         isClientTurn,
-        isNegotiable
+        loading,
+        localActionTaken
     });
 
     // Status Display Logic
@@ -83,6 +107,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
             return;
         }
         setLoading(true);
+        setLocalActionTaken(true); // Hide buttons IMMEDIATELY
         try {
             await clientNegotiationService.respond({
                 negotiationId: neg.NegociacionId ?? neg.negociacionId,
@@ -93,9 +118,11 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                 message: action === 'Contraoferta' ? 'Contraoferta enviada desde el chat' : undefined
             });
             setIsCountering(false);
-            onUpdate();
+            // Refresh parent state
+            await onUpdate();
         } catch (error) {
             console.error(error);
+            setLocalActionTaken(false); // Restore on error
             alert('Error al procesar la acción');
         } finally {
             setLoading(false);
@@ -153,20 +180,20 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                     <span className="text-xl font-bold text-blue-700">${neg.OfertaActual ?? neg.ofertaActual}</span>
                 </div>
 
-                {normalizedLastSender !== normalizedCurrentUser && (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente') && (
+                {normLastSender !== normCurrentUser && (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente') && (
                     <p className="text-xs text-orange-600 mt-2 font-medium">
                         📣 El proveedor te ha enviado esta cotización/oferta. {limitReached ? 'El límite de ofertas ha sido alcanzado.' : '¿Qué deseas hacer?'}
                     </p>
                 )}
-                {normalizedLastSender === normalizedCurrentUser && (
+                {normLastSender === normCurrentUser && (
                     <p className="text-xs text-gray-500 mt-2">
                         ⏳ Esperando respuesta del proveedor...
                     </p>
                 )}
             </CardContent>
 
-            {/* Actions for Client */}
-            {isClientTurn && (
+            {/* Actions for Client - Hide while loading or if it's not our turn */}
+            {isClientTurn && !loading && (
                 <CardFooter className="flex flex-col gap-1 pt-2">
                     {!isCountering ? (
                         <div className="flex gap-2 w-full">
@@ -246,7 +273,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
             {!isClientTurn && (estado.toLowerCase() === 'pendiente' || estado.toLowerCase() === 'contraoferta') && (
                 <CardFooter className="pt-0 pb-2">
                     <p className="text-[10px] text-gray-400 text-center w-full italic">
-                        Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normalizedLastSender?.substring(0, 5)})
+                        Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normLastSender?.substring(0, 5)})
                     </p>
                 </CardFooter>
             )}

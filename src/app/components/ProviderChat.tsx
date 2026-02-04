@@ -103,26 +103,57 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     }
   };
 
+  // Local state to hide buttons immediately after acting
+  const [localActionTaken, setLocalActionTaken] = useState(false);
+
   // Check if we should show actions or block chat
   const getNegotiationState = () => {
     if (!negotiationId || !type) return { isPending: false, isRejected: false, isAccepted: false };
 
-    const negRelatedMessages = messages.filter(m => m.type === 'Negociacion' || m.type === 'Sistema');
+    const negRelatedMessages = messages.filter(m =>
+      m.tipo === 'Negociacion' || m.tipo === 'Sistema' || m.tipo === 'Cotizacion' ||
+      m.type === 'Negociacion' || m.type === 'Sistema' || m.type === 'Cotizacion'
+    );
     if (negRelatedMessages.length === 0) return { isPending: false, isRejected: false, isAccepted: false };
 
     const lastEvent = negRelatedMessages[negRelatedMessages.length - 1];
+    const content = (lastEvent.contenido || lastEvent.content || "").toLowerCase();
+    const t = lastEvent.tipo || lastEvent.type || "";
 
-    const isRejected = lastEvent.type === 'Sistema' && lastEvent.content.toLowerCase().includes('rechazado');
-    const isAccepted = lastEvent.type === 'Sistema' && lastEvent.content.toLowerCase().includes('aceptado');
-    const isPending = lastEvent.type === 'Negociacion' &&
-      lastEvent.sender === 'other' &&
-      lastEvent.content.toLowerCase().includes('contraoferta');
+    // In ProviderChat, sender is mapped to 'user' (current user) or 'other'
+    const lastSender = lastEvent.sender || "";
+    const isOtherSender = lastSender === 'other';
+
+    // If the last event is a new Quote, then it's NOT rejected anymore
+    const isRejected = t === 'Sistema' && content.includes('rechazado');
+    const isAccepted = t === 'Sistema' && (content.includes('aceptado') || content.includes('aceptada'));
+
+    // It's pending if the last message was a counteroffer/quote FROM THE OTHER PERSON
+    // AND it hasn't been finalized yet.
+    const isPending = !localActionTaken && (t === 'Negociacion' || t === 'Cotizacion') &&
+      isOtherSender &&
+      (content.includes('contraoferta') || content.includes('cotización'));
 
     return { isPending, isRejected, isAccepted };
   };
 
+  const { isPending: isNegotiationPending, isRejected: isNegotiationRejected, isAccepted: isNegotiationAccepted } = getNegotiationState();
 
-  const { isPending: isNegotiationPending, isRejected: isNegotiationRejected } = getNegotiationState();
+  // Reset localActionTaken when we get confirmation from server that it's the other person's turn
+  // OR if the negotiation is accepted/rejected
+  if (localActionTaken) {
+    const negRelatedMessages = messages.filter(m =>
+      m.tipo === 'Negociacion' || m.tipo === 'Sistema' || m.tipo === 'Cotizacion' ||
+      m.type === 'Negociacion' || m.type === 'Sistema' || m.type === 'Cotizacion'
+    );
+    if (negRelatedMessages.length > 0) {
+      const lastEvent = negRelatedMessages[negRelatedMessages.length - 1];
+      const lastSender = lastEvent.sender || "";
+      if (lastSender === 'user' || isNegotiationAccepted || isNegotiationRejected) {
+        setLocalActionTaken(false);
+      }
+    }
+  }
 
   // BLOCKING LOGIC:
   // 1. If negotiation is rejected -> Blocked for everyone
@@ -131,15 +162,17 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   // Use localStatus if available (updated when client accepts), otherwise use prop status
   const currentStatus = localStatus || status || '';
   const statusLower = currentStatus.toLowerCase();
-  const isAceptada = statusLower === 'aceptada' || statusLower === 'completada' || statusLower === 'finalizada';
+  const isAceptada = statusLower === 'aceptada' || statusLower === 'completada' || statusLower === 'finalizada' || isNegotiationAccepted;
   const isNegotiationActive = !!negotiationId;
 
   // Block chat for BOTH roles if there's an active negotiation that hasn't been accepted
-  const chatDisabled = isNegotiationRejected || (isNegotiationActive && !isAceptada);
+  // We check the literal status from backend first for 'Rechazada' persistence
+  const isRejectedState = statusLower === 'rechazada' || isNegotiationRejected;
+  const chatDisabled = isRejectedState || (isNegotiationActive && !isAceptada);
 
   // Use the backend provided counter instead of manual counting in fractional message history
   const negotiationCount = negotiationCounter ?? 0;
-  const limitReached = negotiationCount >= 10;
+  const limitReached = negotiationCount >= 3;
 
   const handleActionClick = (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
     setActionType(action);
@@ -157,6 +190,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     }
 
     try {
+      setLocalActionTaken(true); // Hide buttons IMMEDIATELY
       const response = await clientNegotiationService.respond({
         negotiationId,
         clientId: "", // Service handles this
@@ -197,6 +231,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       }
 
     } catch (error: any) {
+      setLocalActionTaken(false); // Restore on error
       alert('Error: ' + (error.response?.data?.Error || error.message));
     }
   };
