@@ -1410,6 +1410,21 @@ BEGIN
 END";
                 connection.Execute(spObtenerNegocProv);
                 Console.WriteLine("sp_ObtenerNegociacionesProveedor Created/Updated.");
+
+                // 2.6 sp_ObtenerMensajes
+                var spGetMessages = @"
+                CREATE OR ALTER PROCEDURE sp_ObtenerMensajes
+                    @ConversacionId UNIQUEIDENTIFIER
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    SELECT * 
+                    FROM tbl_MensajesChat
+                    WHERE ConversacionId = @ConversacionId
+                    ORDER BY FechaEnvio ASC;
+                END";
+                connection.Execute(spGetMessages);
+                Console.WriteLine("sp_ObtenerMensajes Created/Updated.");
             }
             catch (Exception ex)
             {
