@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Cotizapp.API.Services;
 using Cotizapp.API.Models;
+using Dapper;
+using System.Data;
 
 namespace Cotizapp.API.Controllers
 {
@@ -21,17 +23,40 @@ namespace Cotizapp.API.Controllers
         {
             try 
             {
-                var newId = await _db.EditDataReturnObject<Guid>("sp_CrearSolicitudServicio", new {
-                    ClienteId = req.ClienteId,
-                    Categoria = req.Categoria,
-                    Descripcion = req.Descripcion,
-                    FotosJson = req.FotosJson,
-                    RespuestasGuiadasJson = req.RespuestasGuiadasJson,
-                    UbicacionLat = req.UbicacionLat,
-                    UbicacionLng = req.UbicacionLng,
-                    UbicacionDireccion = req.UbicacionDireccion
-                });
+                var p = new DynamicParameters();
+                p.Add("ClienteId", req.ClienteId);
+                p.Add("ProveedorId", req.ProveedorId); // Can be null now
+                p.Add("ServicioId", req.ServicioId);   // Can be null now
+                p.Add("Categoria", req.Categoria);
+                p.Add("Descripcion", req.Descripcion);
+                p.Add("Titulo", req.Titulo);
+                p.Add("Prioridad", req.Prioridad);
+                p.Add("FotosJson", req.FotosJson);
+                p.Add("RespuestasGuiadasJson", req.RespuestasGuiadasJson);
+                p.Add("UbicacionLat", req.UbicacionLat);
+                p.Add("UbicacionLng", req.UbicacionLng);
+                p.Add("UbicacionDireccion", req.UbicacionDireccion);
+                p.Add("NewId", dbType: DbType.Guid, direction: ParameterDirection.Output);
+
+                await _db.EditData("sp_CrearSolicitudServicio", p);
+                
+                var newId = p.Get<Guid>("NewId");
                 return Ok(new { Id = newId });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpGet("provider/{providerId}")]
+        public async Task<IActionResult> GetProviderRequests(Guid providerId)
+        {
+            try
+            {
+                var requests = await _db.GetAllAsync<dynamic>("sp_ObtenerSolicitudesProveedor", new { ProveedorId = providerId });
+                return Ok(requests);
             }
             catch (Exception ex)
             {
@@ -55,19 +80,42 @@ namespace Cotizapp.API.Controllers
         [HttpPost("quote")]
         public async Task<IActionResult> SubmitQuote([FromBody] QuoteDto req)
         {
+            Console.WriteLine($"[API] SubmitQuote called. SolicitudId: {req.SolicitudId}, Prov: {req.ProveedorId}, Price: {req.Precio}, Neg: {req.IsNegotiable}");
             try
             {
-                var quoteId = await _db.EditDataReturnObject<Guid>("sp_EnviarCotizacion", new {
+                // DEBUGGING: Use dynamic to catch "ERROR" rows from SP without crashing Dapper
+                var result = await _db.EditDataReturnObject<dynamic>("sp_EnviarCotizacion", new {
                     SolicitudId = req.SolicitudId,
                     ProveedorId = req.ProveedorId,
                     Precio = req.Precio,
                     Mensaje = req.Mensaje,
-                    TiempoEstimado = req.TiempoEstimado
+                    TiempoEstimado = req.TiempoEstimado,
+                    EsNegociable = req.IsNegotiable
                 });
-                return Ok(new { Id = quoteId });
+
+                // Safely handle result
+                var dict = result as IDictionary<string, object>;
+                
+                if (dict != null)
+                {
+                     if (dict.ContainsKey("Status") && dict["Status"]?.ToString() == "ERROR")
+                     {
+                         var msg = dict.ContainsKey("Message") ? dict["Message"]?.ToString() : "Unknown DB Error";
+                         Console.WriteLine($"[API LOGIC ERROR] {msg}");
+                         return BadRequest(new { Error = msg });
+                     }
+                     if (dict.ContainsKey("Id"))
+                     {
+                         return Ok(new { Id = dict["Id"] });
+                     }
+                }
+
+                Console.WriteLine("[API ERROR] No result dictionary or Id found in DB response.");
+                return BadRequest(new { Error = "No se pudo procesar la cotización en la base de datos." });
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[API ERROR] SubmitQuote Failed: {ex.Message}");
                 return BadRequest(new { Error = ex.Message });
             }
         }
@@ -76,8 +124,12 @@ namespace Cotizapp.API.Controllers
     public class ServiceRequestDto
     {
         public Guid ClienteId { get; set; }
+        public Guid? ProveedorId { get; set; } // Optional for direct requests
+        public Guid? ServicioId { get; set; } // Optional for direct requests
         public string Categoria { get; set; }
+        public string Titulo { get; set; }
         public string Descripcion { get; set; }
+        public string Prioridad { get; set; }
         public string FotosJson { get; set; } // JSON String
         public string RespuestasGuiadasJson { get; set; } // JSON String
         public double UbicacionLat { get; set; }
@@ -92,5 +144,6 @@ namespace Cotizapp.API.Controllers
         public decimal Precio { get; set; }
         public string Mensaje { get; set; }
         public string TiempoEstimado { get; set; }
+        public bool IsNegotiable { get; set; }
     }
 }

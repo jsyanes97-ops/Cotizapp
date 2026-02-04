@@ -106,7 +106,343 @@ namespace Cotizapp.API
                     WHERE VisibleParaCliente = 0 OR VisibleParaProveedor = 0";
                 connection.Execute(fixVisibility);
                 Console.WriteLine("Existing conversations visibility fixed.");
+
+                // 2.4 Service Requests Table
+                var checkSql4 = @"
+                    SELECT count(*) 
+                    FROM sys.tables 
+                    WHERE name = 'tbl_SolicitudesServicio'";
                 
+                int count4 = connection.QueryFirstOrDefault<int>(checkSql4);
+                if (count4 == 0)
+                {
+                    Console.WriteLine("Creating tbl_SolicitudesServicio...");
+                    var createTableSql = @"
+                        CREATE TABLE tbl_SolicitudesServicio (
+                            Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+                            ClienteId UNIQUEIDENTIFIER NOT NULL,
+                            ProveedorId UNIQUEIDENTIFIER NULL, -- Nullable for broadcast requests
+                            ServicioId UNIQUEIDENTIFIER NULL, -- Nullable for general requests
+                            Categoria NVARCHAR(50) NOT NULL,
+                            Descripcion NVARCHAR(MAX) NOT NULL,
+                            FotosJson NVARCHAR(MAX) NULL,
+                            RespuestasGuiadasJson NVARCHAR(MAX) NULL,
+                            UbicacionLat FLOAT,
+                            UbicacionLng FLOAT,
+                            UbicacionDireccion NVARCHAR(255),
+                            Estado NVARCHAR(20) DEFAULT 'Pendiente', -- Pendiente, Aceptada, Rechazada, Cancelada
+                            FechaSolicitud DATETIME DEFAULT GETDATE(),
+                            FechaExpiracion DATETIME NULL
+                        );";
+                    connection.Execute(createTableSql);
+                    Console.WriteLine("tbl_SolicitudesServicio Created.");
+                }
+                else
+                {
+                    // 2.4.1 Fix missing columns in existing table (Robust Logic)
+                    try 
+                    {
+                        var checkColsOps = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'ProveedorId'";
+                        
+                        int provColCount = connection.QueryFirstOrDefault<int>(checkColsOps);
+                        Console.WriteLine($"Checking ProveedorId column: Found {provColCount}");
+                        
+                        if (provColCount == 0)
+                        {
+                            Console.WriteLine("Adding ProveedorId to tbl_SolicitudesServicio...");
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD ProveedorId UNIQUEIDENTIFIER NULL");
+                            Console.WriteLine("ProveedorId added successfully.");
+                        }
+
+                        var checkColsServ = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'ServicioId'";
+
+                        int servColCount = connection.QueryFirstOrDefault<int>(checkColsServ);
+                        Console.WriteLine($"Checking ServicioId column: Found {servColCount}");
+
+                        if (servColCount == 0)
+                        {
+                            Console.WriteLine("Adding ServicioId to tbl_SolicitudesServicio...");
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD ServicioId UNIQUEIDENTIFIER NULL");
+                            Console.WriteLine("ServicioId added successfully.");
+                        }
+
+                        // Check for FechaSolicitud
+                        var checkColsDate = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'FechaSolicitud'";
+
+                        if (connection.QueryFirstOrDefault<int>(checkColsDate) == 0)
+                        {
+                            Console.WriteLine("Adding FechaSolicitud to tbl_SolicitudesServicio...");
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD FechaSolicitud DATETIME DEFAULT GETDATE()");
+                            Console.WriteLine("FechaSolicitud added successfully.");
+                        }
+
+                        // Check for FechaExpiracion
+                        var checkColsExp = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'FechaExpiracion'";
+
+                        if (connection.QueryFirstOrDefault<int>(checkColsExp) == 0)
+                        {
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD FechaExpiracion DATETIME NULL");
+                            Console.WriteLine("FechaExpiracion added successfully.");
+                        }
+
+                        // Check for Titulo
+                        var checkColsTitle = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'Titulo'";
+
+                        if (connection.QueryFirstOrDefault<int>(checkColsTitle) == 0)
+                        {
+                            Console.WriteLine("Adding Titulo to tbl_SolicitudesServicio...");
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD Titulo NVARCHAR(100) NULL");
+                            Console.WriteLine("Titulo added successfully.");
+                        }
+
+                        // Check for Prioridad
+                        var checkColsPrio = @"
+                            SELECT count(*) 
+                            FROM sys.columns 
+                            WHERE object_id = OBJECT_ID(N'[dbo].[tbl_SolicitudesServicio]') 
+                            AND name = 'Prioridad'";
+
+                        if (connection.QueryFirstOrDefault<int>(checkColsPrio) == 0)
+                        {
+                            Console.WriteLine("Adding Prioridad to tbl_SolicitudesServicio...");
+                            connection.Execute("ALTER TABLE tbl_SolicitudesServicio ADD Prioridad NVARCHAR(20) DEFAULT 'Normal'");
+                            Console.WriteLine("Prioridad added successfully.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                         Console.WriteLine($"Error fixing table columns: {ex.Message}");
+                    }
+                }
+
+                // SP: Create Service Request
+                // 2.5 Ensure tbl_NegociacionesServicio schema (Fixing missing columns)
+                var checkNegTable = @"
+                    SELECT count(*) 
+                    FROM sys.tables 
+                    WHERE name = 'tbl_NegociacionesServicio'";
+
+                if (connection.QueryFirstOrDefault<int>(checkNegTable) == 0)
+                {
+                    Console.WriteLine("Creating tbl_NegociacionesServicio...");
+                    var createNegTable = @"
+                        CREATE TABLE tbl_NegociacionesServicio (
+                            Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+                            SolicitudId UNIQUEIDENTIFIER NULL,
+                            ProveedorId UNIQUEIDENTIFIER NOT NULL,
+                            ClienteId UNIQUEIDENTIFIER NOT NULL,
+                            ServicioId UNIQUEIDENTIFIER NULL,
+                            Estado NVARCHAR(50) DEFAULT 'Pendiente',
+                            PrecioOriginal DECIMAL(10, 2), -- Standardized name
+                            OfertaActual DECIMAL(10, 2),   -- Standardized name
+                            UltimaOferta DECIMAL(10, 2),
+                            UltimoEmisorId UNIQUEIDENTIFIER,
+                            ContadorContraofertas INT DEFAULT 0,
+                            FechaCreacion DATETIME DEFAULT GETDATE(),
+                            FechaActualizacion DATETIME DEFAULT GETDATE()
+                        );";
+                    connection.Execute(createNegTable);
+                    Console.WriteLine("tbl_NegociacionesServicio Created.");
+                }
+                else
+                {
+                    // Check and Add SolicitudId
+                    var sqlAddSolicitudId = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'SolicitudId')
+                        BEGIN
+                            ALTER TABLE tbl_NegociacionesServicio ADD SolicitudId UNIQUEIDENTIFIER NULL;
+                        END";
+                    connection.Execute(sqlAddSolicitudId);
+
+                    // Check and Add Monetary Columns individually using T-SQL checks
+                    var sqlAddPrecioOriginal = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'PrecioOriginal')
+                        BEGIN
+                            ALTER TABLE tbl_NegociacionesServicio ADD PrecioOriginal DECIMAL(10, 2) DEFAULT 0;
+                        END";
+                    connection.Execute(sqlAddPrecioOriginal);
+                    
+                    var sqlAddOfertaActual = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'OfertaActual')
+                        BEGIN
+                             ALTER TABLE tbl_NegociacionesServicio ADD OfertaActual DECIMAL(10, 2) DEFAULT 0;
+                        END";
+                    connection.Execute(sqlAddOfertaActual);
+
+                    var sqlAddUltimaOferta = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'UltimaOferta')
+                        BEGIN
+                             ALTER TABLE tbl_NegociacionesServicio ADD UltimaOferta DECIMAL(10, 2) DEFAULT 0;
+                        END";
+                    connection.Execute(sqlAddUltimaOferta);
+
+                    var sqlAddContador = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'ContadorContraofertas')
+                        BEGIN
+                            ALTER TABLE tbl_NegociacionesServicio ADD ContadorContraofertas INT DEFAULT 0;
+                        END";
+                    connection.Execute(sqlAddContador);
+
+                }
+
+                // FORCE Ensure ServicioId is NULLABLE (Critical for Broadcast Requests)
+                // Moved outside conditional to ensure it runs
+                var sqlMakeServicioNullable = @"
+                    ALTER TABLE tbl_NegociacionesServicio ALTER COLUMN ServicioId UNIQUEIDENTIFIER NULL;
+                ";
+                try {
+                    connection.Execute(sqlMakeServicioNullable);
+                    Console.WriteLine("tbl_NegociacionesServicio.ServicioId set to NULL (Forced).");
+                } catch(Exception ex) {
+                        Console.WriteLine("Warning ensuring ServicioId nullable: " + ex.Message);
+                }
+
+                var spCreateRequest = @"
+                CREATE OR ALTER PROCEDURE sp_CrearSolicitudServicio
+                    @ClienteId UNIQUEIDENTIFIER,
+                    @ProveedorId UNIQUEIDENTIFIER = NULL,
+                    @ServicioId UNIQUEIDENTIFIER = NULL,
+                    @Categoria NVARCHAR(50),
+                    @Descripcion NVARCHAR(MAX),
+                    @Titulo NVARCHAR(100) = NULL,
+                    @Prioridad NVARCHAR(20) = 'Normal',
+                    @FotosJson NVARCHAR(MAX) = NULL,
+                    @RespuestasGuiadasJson NVARCHAR(MAX) = NULL,
+                    @UbicacionLat FLOAT = 0,
+                    @UbicacionLng FLOAT = 0,
+                    @UbicacionDireccion NVARCHAR(255) = NULL,
+                    @NewId UNIQUEIDENTIFIER OUTPUT
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    SET @NewId = NEWID();
+
+                    INSERT INTO tbl_SolicitudesServicio (
+                        Id, ClienteId, ProveedorId, ServicioId, Categoria, Descripcion, Titulo, Prioridad,
+                        FotosJson, RespuestasGuiadasJson, UbicacionLat, UbicacionLng, UbicacionDireccion, FechaExpiracion
+                    )
+                    VALUES (
+                        @NewId, @ClienteId, @ProveedorId, @ServicioId, @Categoria, @Descripcion, @Titulo, @Prioridad,
+                        @FotosJson, @RespuestasGuiadasJson, @UbicacionLat, @UbicacionLng, @UbicacionDireccion,
+                        DATEADD(HOUR, 24, GETDATE()) -- Default expiration 24h
+                    );
+                END";
+                connection.Execute(spCreateRequest);
+                Console.WriteLine("sp_CrearSolicitudServicio Refreshed.");
+
+                // SP: Get Provider Requests
+                var spGetProviderRequests = @"
+                CREATE OR ALTER PROCEDURE sp_ObtenerSolicitudesProveedor
+                    @ProveedorId UNIQUEIDENTIFIER
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    SELECT 
+                        s.*,
+                        u.Nombre as ClienteNombre,
+                        CASE 
+                            WHEN s.ServicioId IS NOT NULL THEN (SELECT Titulo FROM tbl_ServiciosOfrecidos WHERE Id = s.ServicioId)
+                            ELSE NULL 
+                        END as ServicioTitulo
+                    FROM tbl_SolicitudesServicio s
+                    JOIN tbl_Usuarios u ON s.ClienteId = u.Id
+                    WHERE (s.ProveedorId = @ProveedorId OR s.ProveedorId IS NULL)
+                    ORDER BY s.FechaSolicitud DESC;
+                END";
+                connection.Execute(spGetProviderRequests);
+                Console.WriteLine("sp_ObtenerSolicitudesProveedor Refreshed.");
+
+                // SP: Send Quote (and create chat/negotiation)
+                var spSendQuote = @"
+                CREATE OR ALTER PROCEDURE sp_EnviarCotizacion
+                    @SolicitudId UNIQUEIDENTIFIER,
+                    @ProveedorId UNIQUEIDENTIFIER,
+                    @Precio DECIMAL(10, 2),
+                    @Mensaje NVARCHAR(MAX),
+                    @TiempoEstimado NVARCHAR(50),
+                    @EsNegociable BIT = 0
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    DECLARE @ClienteId UNIQUEIDENTIFIER;
+                    DECLARE @ConversacionId UNIQUEIDENTIFIER;
+                    DECLARE @NegociacionId UNIQUEIDENTIFIER;
+                    
+                    -- 1. Get Client Info
+                    SELECT @ClienteId = ClienteId 
+                    FROM tbl_SolicitudesServicio WHERE Id = @SolicitudId;
+
+                    IF @ClienteId IS NULL
+                    BEGIN
+                        SELECT 'ERROR' as Status, 'Solicitud no encontrada' as Message;
+                        RETURN;
+                    END
+
+                    -- 2. Create Conversation (Type 'Servicio', RelationId = SolicitudId)
+                    -- FIXED: Parameter name @ConversacionId
+                    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @SolicitudId, @ConversacionId = @ConversacionId OUTPUT;
+
+                    -- 3. Create or Update Negotiation Record
+                    SELECT @NegociacionId = Id FROM tbl_NegociacionesServicio 
+                    WHERE SolicitudId = @SolicitudId AND ProveedorId = @ProveedorId;
+
+                    IF @NegociacionId IS NULL
+                    BEGIN
+                        SET @NegociacionId = NEWID();
+                        INSERT INTO tbl_NegociacionesServicio (
+                            Id, SolicitudId, ProveedorId, ClienteId, Estado, 
+                            PrecioOriginal, OfertaActual, UltimaOferta, UltimoEmisorId, 
+                            ContadorContraofertas, FechaCreacion, FechaActualizacion
+                        ) VALUES (
+                            @NegociacionId, @SolicitudId, @ProveedorId, @ClienteId, 'Pendiente',
+                            @Precio, @Precio, @Precio, @ProveedorId,
+                            0, GETDATE(), GETDATE()
+                        );
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE tbl_NegociacionesServicio
+                        SET OfertaActual = @Precio,
+                            UltimaOferta = @Precio,
+                            UltimoEmisorId = @ProveedorId,
+                            Estado = 'Pendiente',
+                            FechaActualizacion = GETDATE()
+                        WHERE Id = @NegociacionId;
+                    END
+
+                    -- 4. Send Message
+                    DECLARE @MsgContent NVARCHAR(MAX) = 'Ha enviado una cotización de $' + CAST(@Precio AS NVARCHAR(20)) + ' (' + @TiempoEstimado + ')';
+                    IF @EsNegociable = 1 SET @MsgContent = @MsgContent + '. (Negociable)';
+                    IF @Mensaje IS NOT NULL AND LEN(@Mensaje) > 0 SET @MsgContent = @MsgContent + CHAR(13) + CHAR(10) + @Mensaje;
+
+                    INSERT INTO tbl_MensajesChat (Id, ConversacionId, EmisorId, Contenido, Tipo, FechaEnvio, Leido)
+                    VALUES (NEWID(), @ConversacionId, @ProveedorId, @MsgContent, 'Cotizacion', GETDATE(), 0);
+
+                    -- Return success (using a GUID as typical ID return, though client just needs OK)
+                    SELECT @NegociacionId AS Id;
+                END";
+                connection.Execute(spSendQuote);
+                Console.WriteLine("sp_EnviarCotizacion Refreshed.");
                 // 3. Ensure SPs are correct (Nuclear Option: Fix ALL Negotiation SPs)
                 
                 // 3.1 sp_GetOrCreateConversation
@@ -166,25 +502,25 @@ BEGIN
         END as ServiceCategory,
         -- Quoted Price
         CASE 
-             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 OfertaActual FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
-             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 OfertaActual FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 OfertaActual FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 OfertaActual FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              ELSE 0
         END as QuotedPrice,
         -- Negotiation ID
         CASE 
-             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 Id FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
-             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 Id FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 Id FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 Id FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              ELSE NULL
         END as NegotiationId,
         CASE 
-             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
-             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 Estado FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              ELSE 'active'
         END as Status,
         -- Negotiation Counter
         CASE 
-             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesServicio WHERE ServicioId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
-             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              ELSE 0
         END as NegotiationCounter
     FROM tbl_Conversaciones c
@@ -235,7 +571,7 @@ BEGIN
     DECLARE @PrecioMinimo DECIMAL(10, 2);
     DECLARE @PrecioOriginal DECIMAL(10, 2);
     DECLARE @PermitirNegociacion BIT;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
     -- Get Service Details
     SELECT 
@@ -285,14 +621,14 @@ BEGIN
     );
 
     -- Create Chat Conversation (FIXED OUTPUT PARAM)
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @ServicioId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @ServicioId, @ConversacionId = @ConversacionId OUTPUT;
 
     -- Insert Initial Message
     DECLARE @MsgContent NVARCHAR(MAX) = 'Ha iniciado una negociación con una oferta de $' + CAST(@OfertaMonto AS NVARCHAR(20));
-    IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
+    IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Message: ' + @Mensaje;
 
     INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-    VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
+    VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
 
     SELECT 'OK' as Status, CAST(@NewId AS NVARCHAR(50)) as Id;
 END";
@@ -315,7 +651,7 @@ BEGIN
     DECLARE @PrecioOriginal DECIMAL(10, 2);
     DECLARE @PermitirNegociacion BIT;
     DECLARE @Stock INT;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
     -- Get Product Details
     SELECT 
@@ -372,14 +708,14 @@ BEGIN
     );
     
     -- Create Chat Conversation (FIXED OUTPUT PARAM)
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversacionId OUTPUT;
 
     -- Insert Initial Message
     DECLARE @MsgContent NVARCHAR(MAX) = 'Ha iniciado una negociación con una oferta de $' + CAST(@OfertaMonto AS NVARCHAR(20));
-    IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
+    IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Message: ' + @Mensaje;
 
     INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-    VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
+    VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
 
     SELECT 'OK' as Status, CAST(@NewId AS NVARCHAR(50)) as Id;
 END";
@@ -452,10 +788,10 @@ BEGIN
     DECLARE @CurrentState NVARCHAR(20);
     DECLARE @CounterCount INT;
     DECLARE @ProveedorId UNIQUEIDENTIFIER;
-    DECLARE @ServicioId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @SolicitudId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
-    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, @ServicioId = ServicioId
+    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, @SolicitudId = SolicitudId
     FROM tbl_NegociacionesServicio
     WHERE Id = @NegociacionId AND ClienteId = @ClienteId;
 
@@ -465,7 +801,7 @@ BEGIN
         RETURN;
     END
 
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @ServicioId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @SolicitudId, @ConversacionId = @ConversacionId OUTPUT;
 
     IF @Accion = 'Aceptar'
     BEGIN
@@ -475,7 +811,7 @@ BEGIN
         WHERE Id = @NegociacionId;
         
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
         
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -485,10 +821,10 @@ BEGIN
         SET Estado = 'Rechazada',
             FechaActualizacion = GETDATE()
         WHERE Id = @NegociacionId;
-
+ 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
-
+        VALUES (@ConversacionId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
+ 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
     ELSE IF @Accion = 'Contraoferta'
@@ -498,7 +834,7 @@ BEGIN
              SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
              RETURN;
         END
-
+ 
         UPDATE tbl_NegociacionesServicio
         SET Estado = 'Contraoferta',
             OfertaActual = @MontoContraoferta,
@@ -506,13 +842,13 @@ BEGIN
             ContadorContraofertas = @CounterCount + 1,
             FechaActualizacion = GETDATE()
         WHERE Id = @NegociacionId;
-
+ 
         DECLARE @MsgContent NVARCHAR(MAX) = 'Ha enviado una contraoferta de $' + CAST(@MontoContraoferta AS NVARCHAR(20));
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
-
+ 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
-
+        VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
+ 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
 END;
@@ -532,7 +868,7 @@ BEGIN
     DECLARE @CounterCount INT;
     DECLARE @ProveedorId UNIQUEIDENTIFIER;
     DECLARE @ProductoId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
     SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, @ProductoId = ProductoId
     FROM tbl_NegociacionesProducto
@@ -544,7 +880,7 @@ BEGIN
          RETURN;
     END
 
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversacionId OUTPUT;
 
     IF @Accion = 'Aceptar'
     BEGIN
@@ -554,7 +890,7 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -566,7 +902,7 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
@@ -590,7 +926,7 @@ BEGIN
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
+        VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
@@ -634,10 +970,13 @@ BEGIN
             N.Estado,
             N.ProveedorId,
             N.ClienteId,
-            N.ContadorContraofertas
+            N.ContadorContraofertas,
+            1 as EsNegociable -- For services, it's generally negotiable if it reached this stage, but we can refine this later if needed
         FROM tbl_NegociacionesServicio N
-        JOIN tbl_ServiciosOfrecidos S ON N.ServicioId = S.Id
-        WHERE N.Id = @RelacionId OR (N.ServicioId = @RelacionId AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId))
+        LEFT JOIN tbl_SolicitudesServicio S ON N.SolicitudId = S.Id
+        WHERE (N.Id = @RelacionId OR N.SolicitudId = @RelacionId OR N.ServicioId = @RelacionId)
+          AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
+          AND N.ProveedorId = (SELECT ProveedorId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
         ORDER BY N.FechaActualizacion DESC;
     END
     ELSE IF @TipoRelacion = 'Producto'
@@ -652,10 +991,13 @@ BEGIN
             N.Estado,
             N.ProveedorId,
             N.ClienteId,
-            N.ContadorContraofertas
+            N.ContadorContraofertas,
+            CAST(P.PermitirNegociacion AS BIT) AS EsNegociable
         FROM tbl_NegociacionesProducto N
         JOIN tbl_Productos P ON N.ProductoId = P.Id
-        WHERE N.ProductoId = @RelacionId AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
+        WHERE N.ProductoId = @RelacionId 
+          AND N.ClienteId = (SELECT ClienteId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
+          AND N.ProveedorId = (SELECT ProveedorId FROM tbl_Conversaciones WHERE Id = @ConversacionId)
         ORDER BY N.FechaActualizacion DESC;
     END
 END";
@@ -692,10 +1034,11 @@ BEGIN
     DECLARE @CurrentState NVARCHAR(20);
     DECLARE @CounterCount INT;
     DECLARE @ProveedorId UNIQUEIDENTIFIER;
-    DECLARE @ServicioId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @RelacionId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
-    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, @ServicioId = ServicioId
+    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, 
+           @RelacionId = COALESCE(SolicitudId, ServicioId)
     FROM tbl_NegociacionesServicio
     WHERE Id = @NegociacionId AND ClienteId = @ClienteId;
 
@@ -705,7 +1048,7 @@ BEGIN
         RETURN;
     END
 
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @ServicioId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @RelacionId, @ConversacionId = @ConversacionId OUTPUT;
 
     IF @Accion = 'Aceptar'
     BEGIN
@@ -715,7 +1058,7 @@ BEGIN
         WHERE Id = @NegociacionId;
         
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
         
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -727,13 +1070,13 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 3
+        IF @CounterCount >= 10
         BEGIN
              SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
              RETURN;
@@ -751,7 +1094,7 @@ BEGIN
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
+        VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
@@ -774,7 +1117,7 @@ BEGIN
     DECLARE @CounterCount INT;
     DECLARE @ProveedorId UNIQUEIDENTIFIER;
     DECLARE @ProductoId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
     SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ProveedorId = ProveedorId, @ProductoId = ProductoId
     FROM tbl_NegociacionesProducto
@@ -786,7 +1129,7 @@ BEGIN
          RETURN;
     END
 
-    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversacionId OUTPUT;
 
     IF @Accion = 'Aceptar'
     BEGIN
@@ -796,7 +1139,7 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha aceptado la oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -808,13 +1151,13 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ClienteId, 'Ha rechazado la oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 3
+        IF @CounterCount >= 10
         BEGIN
              SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. Debes aceptar o rechazar.' as Message;
              RETURN;
@@ -832,7 +1175,7 @@ BEGIN
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ClienteId, @MsgContent, 'Negociacion');
+        VALUES (@ConversacionId, @ClienteId, @MsgContent, 'Negociacion');
 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
@@ -854,10 +1197,11 @@ BEGIN
     DECLARE @CurrentState NVARCHAR(20);
     DECLARE @CounterCount INT;
     DECLARE @ClientId UNIQUEIDENTIFIER;
-    DECLARE @ServicioId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @RelacionId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
-    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ClientId = ClienteId, @ServicioId = ServicioId
+    SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ClientId = ClienteId, 
+           @RelacionId = COALESCE(SolicitudId, ServicioId)
     FROM tbl_NegociacionesServicio
     WHERE Id = @NegociacionId AND ProveedorId = @ProveedorId;
 
@@ -867,8 +1211,8 @@ BEGIN
         RETURN;
     END
 
-    -- Ensure Conversation Exists (FIXED OUTPUT PARAM)
-    EXEC sp_GetOrCreateConversation @ClientId, @ProveedorId, 'Servicio', @ServicioId, @ConversacionId = @ConversationId OUTPUT;
+    -- Ensure Conversation Exists
+    EXEC sp_GetOrCreateConversation @ClientId, @ProveedorId, 'Servicio', @RelacionId, @ConversacionId = @ConversacionId OUTPUT;
 
     -- Logic
     IF @Accion = 'Aceptar'
@@ -880,7 +1224,7 @@ BEGIN
         
         -- Insert Chat Message
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, 'Ha aceptado tu oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ProveedorId, 'Ha aceptado tu oferta.', 'Sistema');
         
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -893,14 +1237,14 @@ BEGIN
 
         -- Insert Chat Message
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, 'Ha rechazado tu oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ProveedorId, 'Ha rechazado tu oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
         -- Check Limit (Max 5 total counter-offers/messages)
-        IF @CounterCount >= 3
+        IF @CounterCount >= 10
         BEGIN
             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;
@@ -919,7 +1263,7 @@ BEGIN
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, @MsgContent, 'Negociacion');
+        VALUES (@ConversacionId, @ProveedorId, @MsgContent, 'Negociacion');
 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
@@ -943,7 +1287,7 @@ BEGIN
     DECLARE @CounterCount INT;
     DECLARE @ClientId UNIQUEIDENTIFIER;
     DECLARE @ProductoId UNIQUEIDENTIFIER;
-    DECLARE @ConversationId UNIQUEIDENTIFIER;
+    DECLARE @ConversacionId UNIQUEIDENTIFIER;
 
     SELECT @CurrentState = Estado, @CounterCount = ContadorContraofertas, @ClientId = ClienteId, @ProductoId = ProductoId
     FROM tbl_NegociacionesProducto
@@ -956,7 +1300,7 @@ BEGIN
     END
 
     -- Ensure Conversation Exists (FIXED OUTPUT PARAM)
-    EXEC sp_GetOrCreateConversation @ClientId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversationId OUTPUT;
+    EXEC sp_GetOrCreateConversation @ClientId, @ProveedorId, 'Producto', @ProductoId, @ConversacionId = @ConversacionId OUTPUT;
 
     IF @Accion = 'Aceptar'
     BEGIN
@@ -966,7 +1310,7 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, 'Ha aceptado tu oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ProveedorId, 'Ha aceptado tu oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta aceptada' as Message;
     END
@@ -978,13 +1322,13 @@ BEGIN
         WHERE Id = @NegociacionId;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, 'Ha rechazado tu oferta.', 'Sistema');
+        VALUES (@ConversacionId, @ProveedorId, 'Ha rechazado tu oferta.', 'Sistema');
 
         SELECT 'OK' as Status, 'Oferta rechazada' as Message;
     END
     ELSE IF @Accion = 'Contraoferta'
     BEGIN
-        IF @CounterCount >= 3
+        IF @CounterCount >= 10
         BEGIN
             SELECT 'ERROR' as Status, 'Se ha alcanzado el límite de contraofertas. El cliente debe aceptar o rechazar.' as Message;
             RETURN;
@@ -1003,7 +1347,7 @@ BEGIN
         IF @Mensaje IS NOT NULL SET @MsgContent = @MsgContent + '. Mensaje: ' + @Mensaje;
 
         INSERT INTO tbl_MensajesChat (ConversacionId, EmisorId, Contenido, Tipo)
-        VALUES (@ConversationId, @ProveedorId, 'Ha enviado una contraoferta', 'Negociacion');
+        VALUES (@ConversacionId, @ProveedorId, 'Ha enviado una contraoferta', 'Negociacion');
 
         SELECT 'OK' as Status, 'Contraoferta enviada' as Message;
     END
@@ -1022,8 +1366,8 @@ BEGIN
     SELECT 
         'Servicio' as TipoRelacion,
         N.Id,
-        S.Id as ItemId,
-        S.Titulo as ItemTitulo,
+        COALESCE(S.Id, N.SolicitudId) as ItemId,
+        COALESCE(S.Titulo, (SELECT Titulo FROM tbl_SolicitudesServicio WHERE Id = N.SolicitudId)) as ItemTitulo,
         U.Nombre as ClienteNombre,
         N.PrecioOriginal,
         N.OfertaActual,
@@ -1032,9 +1376,9 @@ BEGIN
         N.ContadorContraofertas,
         N.FechaActualizacion
     FROM tbl_NegociacionesServicio N
-    JOIN tbl_ServiciosOfrecidos S ON N.ServicioId = S.Id
+    LEFT JOIN tbl_ServiciosOfrecidos S ON N.ServicioId = S.Id
     JOIN tbl_Usuarios U ON N.ClienteId = U.Id
-    WHERE S.ProveedorId = @ProveedorId
+    WHERE (S.ProveedorId = @ProveedorId OR N.ProveedorId = @ProveedorId)
 
     UNION ALL
 

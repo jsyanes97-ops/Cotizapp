@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -9,57 +9,15 @@ import { ServiceRequest, Provider } from '@/types';
 import { MapPin, Clock, AlertCircle, Send, Image as ImageIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/app/components/ui/dialog';
 import { Switch } from '@/app/components/ui/switch';
+import { requestService } from '@/services'; // Import requestService
 
 interface IncomingRequestsProps {
   provider: Provider;
 }
 
-// Mock de solicitudes entrantes
-const mockRequests: ServiceRequest[] = [
-  {
-    id: 'req-1',
-    clientId: 'client-1',
-    category: 'plomeria',
-    description: 'Tengo una fuga de agua en el lavaplatos de la cocina',
-    photos: [],
-    location: {
-      lat: 9.0336,
-      lng: -79.5339,
-      address: 'Calle 50, Obarrio',
-      district: 'Obarrio'
-    },
-    status: 'pending',
-    guidedAnswers: {
-      'plumbing-type': 'Fuga de agua',
-      'plumbing-urgency': 'Sí, es urgente'
-    },
-    createdAt: new Date(Date.now() - 3 * 60000), // Hace 3 minutos
-    expiresAt: new Date(Date.now() + 7 * 60000) // Expira en 7 minutos
-  },
-  {
-    id: 'req-2',
-    clientId: 'client-2',
-    category: 'plomeria',
-    description: 'Necesito instalar un nuevo lavamanos en el baño',
-    photos: [],
-    location: {
-      lat: 9.0280,
-      lng: -79.5370,
-      address: 'El Cangrejo',
-      district: 'El Cangrejo'
-    },
-    status: 'pending',
-    guidedAnswers: {
-      'plumbing-type': 'Instalación nueva',
-      'plumbing-urgency': 'No es urgente'
-    },
-    createdAt: new Date(Date.now() - 5 * 60000),
-    expiresAt: new Date(Date.now() + 5 * 60000)
-  }
-];
-
 export function IncomingRequests({ provider }: IncomingRequestsProps) {
-  const [requests] = useState<ServiceRequest[]>(mockRequests);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const [allowNegotiation, setAllowNegotiation] = useState(true);
@@ -70,25 +28,81 @@ export function IncomingRequests({ provider }: IncomingRequestsProps) {
     conditions: 'Pago contra entrega del servicio'
   });
 
-  const handleSendQuote = () => {
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const fetchRequests = async () => {
+    try {
+      const { data } = await requestService.getProviderRequests();
+      // Map API response to ServiceRequest type if needed (assuming keys match for now)
+      setRequests(data.map((r: any) => ({
+        id: r.Id,
+        clientId: r.ClienteId,
+        category: r.Categoria,
+        description: r.Descripcion,
+        photos: r.FotosJson ? JSON.parse(r.FotosJson) : [],
+        location: {
+          lat: r.UbicacionLat,
+          lng: r.UbicacionLng,
+          address: r.UbicacionDireccion,
+          district: 'Unknown'
+        },
+        status: r.Estado.toLowerCase(),
+        guidedAnswers: r.RespuestasGuiadasJson ? JSON.parse(r.RespuestasGuiadasJson) : {},
+        createdAt: new Date(r.FechaSolicitud),
+        expiresAt: r.FechaExpiracion ? new Date(r.FechaExpiracion) : new Date(Date.now() + 24 * 60 * 60 * 1000)
+      })));
+    } catch (error) {
+      console.error("Failed to fetch requests", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendQuote = async () => {
     if (!quoteData.price || !quoteData.description || !quoteData.availability) {
       alert('Por favor completa todos los campos obligatorios');
       return;
     }
 
-    // Simular envío de cotización
-    const negotiationText = allowNegotiation
-      ? ' El cliente podrá negociar el precio contigo.'
-      : ' Este precio es firme y no negociable.';
 
-    alert(`✅ Cotización enviada: $${quoteData.price}\n\nEl cliente recibirá tu propuesta junto con otras cotizaciones.${negotiationText}`);
-    setShowQuoteDialog(false);
-    setQuoteData({
-      price: '',
-      description: '',
-      availability: '',
-      conditions: 'Pago contra entrega del servicio'
+    // DEBUG LOG - PLEASE CHECK BROWSER CONSOLE
+    console.log("🚀 PREPARING TO SEND QUOTE 🚀");
+    console.log("Selected Request:", selectedRequest);
+    console.log("Quote Data:", quoteData);
+    console.log("Payload:", {
+      solicitudId: selectedRequest?.id,
+      price: parseFloat(quoteData.price),
+      description: quoteData.description,
+      availability: quoteData.availability,
+      isNegotiable: allowNegotiation
     });
+
+    try {
+      await requestService.submitQuote({
+        solicitudId: selectedRequest?.id,
+        price: parseFloat(quoteData.price),
+        description: quoteData.description,
+        availability: quoteData.availability,
+        isNegotiable: allowNegotiation
+      });
+
+      alert(`✅ Cotización enviada exitosamente`);
+      setShowQuoteDialog(false);
+      setQuoteData({
+        price: '',
+        description: '',
+        availability: '',
+        conditions: 'Pago contra entrega del servicio'
+      });
+      fetchRequests(); // Refresh list
+
+    } catch (error: any) {
+      console.error(error);
+      const errorMsg = error.response?.data?.Error || 'Error al enviar la cotización';
+      alert(`❌ ${errorMsg}`);
+    }
   };
 
   const getTimeRemaining = (expiresAt: Date) => {

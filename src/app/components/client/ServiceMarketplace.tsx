@@ -215,9 +215,28 @@ export function ServiceMarketplace() {
     }
   };
 
-  const handleContactProvider = (service: ServiceListing) => {
-    alert(`✅ Solicitud enviada a ${service.providerName}!\n\nEl proveedor recibirá tu interés y te contactará pronto.`);
-    setSelectedService(null);
+  const handleContactProvider = async (service: ServiceListing) => {
+    try {
+      // Use requestService to create a direct request
+      await import('@/services').then(m => m.requestService.create({
+        category: service.category,
+        description: `Solicitud de servicio: ${service.title}`,
+        serviceId: service.id,
+        providerId: service.providerId,
+        location: {
+          lat: 0, // Should be replaced with real user location if available
+          lng: 0,
+          address: 'Ubicación del cliente',
+          district: service.location.district
+        }
+      }));
+
+      alert(`✅ Solicitud enviada a ${service.providerName}!\n\nEl proveedor ha recibido tu solicitud y podrás verla en tu historial.`);
+      setSelectedService(null);
+    } catch (error) {
+      console.error(error);
+      alert('Error al enviar la solicitud. Por favor intenta de nuevo.');
+    }
   };
 
   const formatTimeRemaining = (date: Date) => {

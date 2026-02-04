@@ -34,6 +34,8 @@ export interface Location {
 export interface ServiceRequest {
   id: string;
   clientId: string;
+  title?: string;
+  priority?: 'Normal' | 'Alta' | 'Urgente';
   category: ServiceCategory | null;
   description: string;
   photos: string[];
@@ -46,7 +48,7 @@ export interface ServiceRequest {
 
 export interface Quote {
   id: string;
-  requestId: string;
+  solicitudId: string; // Aligned with backend
   providerId: string;
   providerName: string;
   providerRating: number;
@@ -56,6 +58,7 @@ export interface Quote {
   currency: string;
   description: string;
   availability: string;
+  isNegotiable?: boolean;
   conditions: string;
   distance: number; // km
   status: QuoteStatus;

@@ -112,5 +112,6 @@ namespace Cotizapp.API.Controllers
         public Guid ProveedorId { get; set; }
         public Guid ClienteId { get; set; }
         public int ContadorContraofertas { get; set; }
+        public bool EsNegociable { get; set; }
     }
 }

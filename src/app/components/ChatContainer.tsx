@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { ChatSidebar, ChatHistory } from './ChatSidebar';
 import { ClientChat } from './ClientChat';
 import { chatService } from '@/services';
+import { NewRequestDialog } from './client/NewRequestDialog';
 
 export function ChatContainer() {
   const [chats, setChats] = useState<ChatHistory[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
+  const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
 
   useEffect(() => {
     fetchConversations();
@@ -36,12 +38,7 @@ export function ChatContainer() {
   };
 
   const handleNewChat = () => {
-    // Logic to start a new chat? 
-    // Usually this switches tab to 'Solicitud' or 'Servicios'
-    // For now, let's just alert or log
-    console.log("New chat requested - redirect to Service Marketplace");
-    // Perhaps switching the active tab in parent? Handled by parent.
-    // Here we can just do nothing or show a modal.
+    setIsNewRequestOpen(true);
   };
 
   const handleSelectChat = (chatId: string) => {
@@ -84,7 +81,16 @@ export function ChatContainer() {
           </div>
         )}
       </div>
-    </div>
+
+      <NewRequestDialog
+        open={isNewRequestOpen}
+        onOpenChange={setIsNewRequestOpen}
+        onSuccess={() => {
+          // Maybe show a success toast?
+          fetchConversations();
+        }}
+      />
+    </div >
   );
 }
 

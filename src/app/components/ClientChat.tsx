@@ -13,7 +13,7 @@ import { NegotiationStatusCard } from './client/NegotiationStatusCard';
 
 // ... keep mockLocations for fallback or testing if needed, or remove ...
 const mockLocations: Location[] = [
-  { district: 'San Francisco', address: 'Calle 50, San Francisco', coordinates: { lat: 9.0, lng: -79.5 } },
+  { district: 'San Francisco', address: 'Calle 50, San Francisco', lat: 9.0, lng: -79.5 },
 ];
 
 interface ClientChatProps {
@@ -340,8 +340,24 @@ export function ClientChat({ chatId, onChatUpdate }: ClientChatProps = {}) {
           {!selectedLocation && currentRequest?.status !== 'describing' && (
             <Button variant="outline" size="icon" onClick={handleLocationShare}><MapPin className="w-5 h-5" /></Button>
           )}
-          <Input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder="Escribe aquí..." className="flex-1" />
-          <Button onClick={handleSend} disabled={!inputValue.trim()}><Send className="w-5 h-5" /></Button>
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder={
+              negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada'
+                ? "Chat bloqueado hasta aceptar la oferta..."
+                : "Escribe aquí..."
+            }
+            className="flex-1"
+            disabled={negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada'}
+          />
+          <Button
+            onClick={handleSend}
+            disabled={!inputValue.trim() || (negotiationContext && (negotiationContext.Estado ?? negotiationContext.estado ?? "").toString().toLowerCase() !== 'aceptada')}
+          >
+            <Send className="w-5 h-5" />
+          </Button>
         </div>
       </div>
     </div>

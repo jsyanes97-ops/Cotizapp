@@ -20,10 +20,15 @@ export const authService = {
 };
 
 export const requestService = {
-    create: async (data: Partial<ServiceRequest>) => {
+    create: async (data: Partial<ServiceRequest> & { serviceId?: string; providerId?: string }) => {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
         return api.post('/requests/create', {
-            clienteId: JSON.parse(localStorage.getItem('user') || '{}').id,
+            clienteId: user.id,
+            proveedorId: data.providerId,
+            servicioId: data.serviceId,
             categoria: data.category,
+            titulo: data.title,
+            prioridad: data.priority,
             descripcion: data.description,
             fotosJson: JSON.stringify(data.photos || []),
             respuestasGuiadasJson: JSON.stringify(data.guidedAnswers || {}),
@@ -38,14 +43,20 @@ export const requestService = {
             params: { providerId: user.id, lat, lng, category }
         });
     },
+    getProviderRequests: async () => {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return api.get(`/requests/provider/${user.id}`);
+    },
     submitQuote: async (quote: Partial<Quote>) => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
+        // We use camelCase for the API payload, .NET maps it to PascalCase DTO
         return api.post('/requests/quote', {
-            solicitudId: quote.requestId,
-            proveedorId: user.id,
-            precio: quote.price,
-            mensaje: quote.description,
-            tiempoEstimado: quote.availability // mapping availability to tiempoEstimado
+            SolicitudId: quote.solicitudId,
+            ProveedorId: user.id,
+            Precio: quote.price,
+            Mensaje: quote.description,
+            TiempoEstimado: quote.availability,
+            IsNegotiable: quote.isNegotiable
         });
     }
 };
