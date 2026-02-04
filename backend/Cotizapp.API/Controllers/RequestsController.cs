@@ -126,15 +126,15 @@ namespace Cotizapp.API.Controllers
         public Guid ClienteId { get; set; }
         public Guid? ProveedorId { get; set; } // Optional for direct requests
         public Guid? ServicioId { get; set; } // Optional for direct requests
-        public string Categoria { get; set; }
-        public string Titulo { get; set; }
-        public string Descripcion { get; set; }
-        public string Prioridad { get; set; }
-        public string FotosJson { get; set; } // JSON String
-        public string RespuestasGuiadasJson { get; set; } // JSON String
+        public string Categoria { get; set; } = string.Empty;
+        public string? Titulo { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+        public string? Prioridad { get; set; }
+        public string? FotosJson { get; set; } // JSON String
+        public string? RespuestasGuiadasJson { get; set; } // JSON String
         public double UbicacionLat { get; set; }
         public double UbicacionLng { get; set; }
-        public string UbicacionDireccion { get; set; }
+        public string? UbicacionDireccion { get; set; }
     }
 
     public class QuoteDto
@@ -142,8 +142,8 @@ namespace Cotizapp.API.Controllers
         public Guid SolicitudId { get; set; }
         public Guid ProveedorId { get; set; }
         public decimal Precio { get; set; }
-        public string Mensaje { get; set; }
-        public string TiempoEstimado { get; set; }
+        public string? Mensaje { get; set; }
+        public string? TiempoEstimado { get; set; }
         public bool IsNegotiable { get; set; }
     }
 }

@@ -378,8 +378,8 @@ namespace Cotizapp.API
                     @SolicitudId UNIQUEIDENTIFIER,
                     @ProveedorId UNIQUEIDENTIFIER,
                     @Precio DECIMAL(10, 2),
-                    @Mensaje NVARCHAR(MAX),
-                    @TiempoEstimado NVARCHAR(50),
+                    @Mensaje NVARCHAR(MAX) = NULL,
+                    @TiempoEstimado NVARCHAR(50) = NULL,
                     @EsNegociable BIT = 0
                 AS
                 BEGIN
@@ -387,9 +387,10 @@ namespace Cotizapp.API
                     DECLARE @ClienteId UNIQUEIDENTIFIER;
                     DECLARE @ConversacionId UNIQUEIDENTIFIER;
                     DECLARE @NegociacionId UNIQUEIDENTIFIER;
+                    DECLARE @ServicioId UNIQUEIDENTIFIER;
                     
-                    -- 1. Get Client Info
-                    SELECT @ClienteId = ClienteId 
+                    -- 1. Get Client and Service Info
+                    SELECT @ClienteId = ClienteId, @ServicioId = ServicioId
                     FROM tbl_SolicitudesServicio WHERE Id = @SolicitudId;
 
                     IF @ClienteId IS NULL
@@ -398,11 +399,12 @@ namespace Cotizapp.API
                         RETURN;
                     END
 
-                    -- 2. Create Conversation (Type 'Servicio', RelationId = SolicitudId)
-                    -- FIXED: Parameter name @ConversacionId
-                    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @SolicitudId, @ConversacionId = @ConversacionId OUTPUT;
+                    -- 2. Create Conversation
+                    -- We use the SolicitudId as the RelacionId to maintain link to the specific request
+                    EXEC sp_GetOrCreateConversation @ClienteId, @ProveedorId, 'Servicio', @SolicitudId, @ConversacionId = @ConversacionId OUTPUT, @SuppressSelect = 1;
 
                     -- 3. Create or Update Negotiation Record
+                    -- Check if negotiation already exists for this request/provider
                     SELECT @NegociacionId = Id FROM tbl_NegociacionesServicio 
                     WHERE SolicitudId = @SolicitudId AND ProveedorId = @ProveedorId;
 
@@ -410,11 +412,11 @@ namespace Cotizapp.API
                     BEGIN
                         SET @NegociacionId = NEWID();
                         INSERT INTO tbl_NegociacionesServicio (
-                            Id, SolicitudId, ProveedorId, ClienteId, Estado, 
+                            Id, SolicitudId, ServicioId, ProveedorId, ClienteId, Estado, 
                             PrecioOriginal, OfertaActual, UltimaOferta, UltimoEmisorId, 
                             ContadorContraofertas, FechaCreacion, FechaActualizacion
                         ) VALUES (
-                            @NegociacionId, @SolicitudId, @ProveedorId, @ClienteId, 'Pendiente',
+                            @NegociacionId, @SolicitudId, @ServicioId, @ProveedorId, @ClienteId, 'Pendiente',
                             @Precio, @Precio, @Precio, @ProveedorId,
                             0, GETDATE(), GETDATE()
                         );
@@ -431,15 +433,16 @@ namespace Cotizapp.API
                     END
 
                     -- 4. Send Message
-                    DECLARE @MsgContent NVARCHAR(MAX) = 'Ha enviado una cotización de $' + CAST(@Precio AS NVARCHAR(20)) + ' (' + @TiempoEstimado + ')';
+                    DECLARE @MsgContent NVARCHAR(MAX) = 'Ha enviado una cotización de $' + CAST(@Precio AS NVARCHAR(20));
+                    IF @TiempoEstimado IS NOT NULL AND LEN(@TiempoEstimado) > 0 SET @MsgContent = @MsgContent + ' (' + @TiempoEstimado + ')';
                     IF @EsNegociable = 1 SET @MsgContent = @MsgContent + '. (Negociable)';
                     IF @Mensaje IS NOT NULL AND LEN(@Mensaje) > 0 SET @MsgContent = @MsgContent + CHAR(13) + CHAR(10) + @Mensaje;
 
                     INSERT INTO tbl_MensajesChat (Id, ConversacionId, EmisorId, Contenido, Tipo, FechaEnvio, Leido)
                     VALUES (NEWID(), @ConversacionId, @ProveedorId, @MsgContent, 'Cotizacion', GETDATE(), 0);
 
-                    -- Return success (using a GUID as typical ID return, though client just needs OK)
-                    SELECT @NegociacionId AS Id;
+                    -- Return success
+                    SELECT 'OK' AS Status, @NegociacionId AS Id;
                 END";
                 connection.Execute(spSendQuote);
                 Console.WriteLine("sp_EnviarCotizacion Refreshed.");
@@ -452,7 +455,8 @@ CREATE OR ALTER PROCEDURE sp_GetOrCreateConversation
     @ProveedorId UNIQUEIDENTIFIER,
     @TipoRelacion NVARCHAR(20),
     @RelacionId UNIQUEIDENTIFIER,
-    @ConversacionId UNIQUEIDENTIFIER = NULL OUTPUT
+    @ConversacionId UNIQUEIDENTIFIER = NULL OUTPUT,
+    @SuppressSelect BIT = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -469,7 +473,10 @@ BEGIN
     END
 
     -- Return for legacy/Dapper compatibility
-    SELECT @ConversacionId;
+    IF @SuppressSelect = 0
+    BEGIN
+        SELECT @ConversacionId;
+    END
 END";
                 // 3. Ensure SPs are correct (Nuclear Option: Fix ALL Negotiation SPs)
                 
