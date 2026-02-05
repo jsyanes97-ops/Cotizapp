@@ -4,7 +4,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Card } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
-import { chatService, clientNegotiationService } from '@/services';
+import { chatService, clientNegotiationService, providerNegotiationService } from '@/services';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/app/components/ui/dialog';
 import { Label } from '@/app/components/ui/label';
 
@@ -128,11 +128,11 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     const isRejected = t === 'Sistema' && content.includes('rechazado');
     const isAccepted = t === 'Sistema' && (content.includes('aceptado') || content.includes('aceptada'));
 
-    // It's pending if the last message was a counteroffer/quote FROM THE OTHER PERSON
+    // It's pending if the last message was a counteroffer/quote/offer FROM THE OTHER PERSON
     // AND it hasn't been finalized yet.
     const isPending = !localActionTaken && (t === 'Negociacion' || t === 'Cotizacion') &&
       isOtherSender &&
-      (content.includes('contraoferta') || content.includes('cotización'));
+      (content.includes('contraoferta') || content.includes('cotización') || content.includes('oferta'));
 
     return { isPending, isRejected, isAccepted };
   };
@@ -191,14 +191,17 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
 
     try {
       setLocalActionTaken(true); // Hide buttons IMMEDIATELY
-      const response = await clientNegotiationService.respond({
+
+      // Use the appropriate service based on role
+      const service = isProvider ? providerNegotiationService : clientNegotiationService;
+      const response = await service.respond({
         negotiationId,
-        clientId: "", // Service handles this
+        [isProvider ? 'providerId' : 'clientId']: "", // Service handles this
         type,
         action: actionType,
         counterOfferAmount: actionType === 'Contraoferta' ? parseFloat(counterOfferAmount) : undefined,
         message: actionMessage
-      });
+      } as any);
 
       const { Status, Message } = response.data;
 
@@ -303,13 +306,16 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Negotiation Actions Overlay (Only for Client) */}
-      {isNegotiationPending && !isProvider && (
+      {/* Negotiation Actions Overlay */}
+      {isNegotiationPending && (
         <div className="absolute bottom-[80px] left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent">
           <Card className="bg-indigo-50 border-indigo-200 shadow-lg p-4 animate-in slide-in-from-bottom duration-300">
             <div className="flex items-center gap-2 mb-3 text-indigo-800 font-medium text-sm">
               <TrendingUp className="w-5 h-5" />
-              El proveedor ha enviado una contraoferta. Responde para continuar el chat.
+              {isProvider
+                ? "El cliente ha enviado una contraoferta. Responde aquí o en 'Negociaciones'."
+                : "El proveedor ha enviado una contraoferta. Responde para continuar el chat."
+              }
             </div>
             <div className="flex gap-2">
               <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleActionClick('Aceptar')}>

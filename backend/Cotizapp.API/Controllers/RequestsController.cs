@@ -119,6 +119,7 @@ namespace Cotizapp.API.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
     }
 
     public class ServiceRequestDto
@@ -147,3 +148,4 @@ namespace Cotizapp.API.Controllers
         public bool IsNegotiable { get; set; }
     }
 }
+

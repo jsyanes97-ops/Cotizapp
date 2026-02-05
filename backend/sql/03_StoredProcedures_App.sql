@@ -21,7 +21,7 @@ BEGIN
     (ClienteId, Categoria, Descripcion, FotosJson, RespuestasGuiadasJson, UbicacionLat, UbicacionLng, UbicacionDireccion, FechaExpiracion)
     OUTPUT INSERTED.Id
     VALUES 
-    (@ClienteId, @Categoria, @Descripcion, @FotosJson, @RespuestasGuiadasJson, @UbicacionLat, @UbicacionLng, @UbicacionDireccion, DATEADD(MINUTE, 10, GETDATE()));
+    (@ClienteId, @Categoria, @Descripcion, @FotosJson, @RespuestasGuiadasJson, @UbicacionLat, @UbicacionLng, @UbicacionDireccion, DATEADD(MINUTE, 5, GETDATE()));
 END
 GO
 
@@ -67,6 +67,12 @@ CREATE OR ALTER PROCEDURE sp_EnviarCotizacion
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    -- Validar que la solicitud no haya expirado
+    IF EXISTS (SELECT 1 FROM tbl_SolicitudesServicio WHERE Id = @SolicitudId AND FechaExpiracion < GETDATE())
+    BEGIN
+        THROW 51000, 'La solicitud ha expirado y no acepta más cotizaciones.', 1;
+    END
 
     INSERT INTO tbl_CotizacionesServicio (SolicitudId, ProveedorId, Precio, Mensaje, TiempoEstimado)
     OUTPUT INSERTED.Id
@@ -118,5 +124,21 @@ BEGIN
     FROM tbl_MensajesChat
     WHERE ConversacionId = @ConversacionId
     ORDER BY FechaEnvio ASC;
+END
+GO
+
+-- =============================================
+-- SP: Limpiar Solicitudes Expiradas
+-- =============================================
+CREATE OR ALTER PROCEDURE sp_LimpiarSolicitudesExpiradas
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM tbl_SolicitudesServicio
+    WHERE FechaExpiracion < GETDATE()
+    AND Estado = 'Abierta';
+    
+    SELECT @@ROWCOUNT AS FilasEliminadas;
 END
 GO

@@ -98,6 +98,102 @@ namespace Cotizapp.API
                 }
 
                 Console.WriteLine("Schema Verification Complete.");
+
+                // 3. Ensure Request Expiration Logic (5 mins) & Cleanup
+                Console.WriteLine("Updating Request Expiration Logic & Cleaning old data...");
+                
+                // 3.1 Cleanup old bad data (created with 24h expiration) - One time fix for legacy data
+                var cleanupDataSql = @"
+                    -- First delete related quotes (FK Constraint)
+                    DELETE FROM tbl_CotizacionesServicio
+                    WHERE SolicitudId IN (
+                        SELECT Id FROM tbl_SolicitudesServicio 
+                        WHERE FechaCreacion < DATEADD(HOUR, -1, GETDATE()) 
+                        AND Estado = 'Abierta'
+                    );
+
+                    -- Then delete the requests
+                    DELETE FROM tbl_SolicitudesServicio
+                    WHERE FechaCreacion < DATEADD(HOUR, -1, GETDATE())
+                    AND Estado = 'Abierta'";
+                int deleted = connection.Execute(cleanupDataSql);
+                if (deleted > 0) Console.WriteLine($"Cleaned {deleted} expired/old requests.");
+                
+                // 3.2 Update Creation SP to use 5 minutes
+                 var updateSP = @"
+                    CREATE OR ALTER PROCEDURE sp_CrearSolicitudServicio
+                        @ClienteId UNIQUEIDENTIFIER,
+                        @Categoria NVARCHAR(50),
+                        @Descripcion NVARCHAR(MAX),
+                        @FotosJson NVARCHAR(MAX),
+                        @RespuestasGuiadasJson NVARCHAR(MAX),
+                        @UbicacionLat FLOAT,
+                        @UbicacionLng FLOAT,
+                        @UbicacionDireccion NVARCHAR(200)
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+
+                        INSERT INTO tbl_SolicitudesServicio 
+                        (ClienteId, Categoria, Descripcion, FotosJson, RespuestasGuiadasJson, UbicacionLat, UbicacionLng, UbicacionDireccion, FechaExpiracion)
+                        OUTPUT INSERTED.Id
+                        VALUES 
+                        (@ClienteId, @Categoria, @Descripcion, @FotosJson, @RespuestasGuiadasJson, @UbicacionLat, @UbicacionLng, @UbicacionDireccion, DATEADD(MINUTE, 5, GETDATE()));
+                    END";
+                connection.Execute(updateSP);
+
+                // 3.3 Create Cleanup SP
+                var createCleanupSP = @"
+                    CREATE OR ALTER PROCEDURE sp_LimpiarSolicitudesExpiradas
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+
+                        DELETE FROM tbl_SolicitudesServicio
+                        WHERE FechaExpiracion < GETDATE()
+                        AND Estado = 'Abierta';
+                        
+                        SELECT @@ROWCOUNT AS FilasEliminadas;
+                    END";
+                connection.Execute(createCleanupSP);
+                
+                connection.Execute(createCleanupSP);
+                
+                // 3.4 Update Quote SP to validate expiration
+                var updateQuoteSP = @"
+                    CREATE OR ALTER PROCEDURE sp_EnviarCotizacion
+                        @SolicitudId UNIQUEIDENTIFIER,
+                        @ProveedorId UNIQUEIDENTIFIER,
+                        @Precio DECIMAL(10, 2),
+                        @Mensaje NVARCHAR(MAX),
+                        @TiempoEstimado NVARCHAR(50)
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+
+                        -- Validar que la solicitud no haya expirado
+                        IF EXISTS (SELECT 1 FROM tbl_SolicitudesServicio WHERE Id = @SolicitudId AND FechaExpiracion < GETDATE())
+                        BEGIN
+                            THROW 51000, 'La solicitud ha expirado y no acepta más cotizaciones.', 1;
+                        END
+
+                        INSERT INTO tbl_CotizacionesServicio (SolicitudId, ProveedorId, Precio, Mensaje, TiempoEstimado)
+                        OUTPUT INSERTED.Id
+                        VALUES (@SolicitudId, @ProveedorId, @Precio, @Mensaje, @TiempoEstimado);
+
+                        -- Verificar si ya existe chat, si no, crearlo
+                        IF NOT EXISTS (SELECT 1 FROM tbl_Conversaciones WHERE RelacionId = @SolicitudId AND ProveedorId = @ProveedorId)
+                        BEGIN
+                            DECLARE @ClienteId UNIQUEIDENTIFIER;
+                            SELECT @ClienteId = ClienteId FROM tbl_SolicitudesServicio WHERE Id = @SolicitudId;
+
+                            INSERT INTO tbl_Conversaciones (TipoRelacion, RelacionId, ClienteId, ProveedorId)
+                            VALUES ('Servicio', @SolicitudId, @ClienteId, @ProveedorId);
+                        END
+                    END";
+                connection.Execute(updateQuoteSP);
+
+                Console.WriteLine("Request Expiration Logic Updated.");
                 
                 // Fix existing conversations that don't have visibility flags set
                 var fixVisibility = @"
@@ -344,7 +440,7 @@ namespace Cotizapp.API
                     VALUES (
                         @NewId, @ClienteId, @ProveedorId, @ServicioId, @Categoria, @Descripcion, @Titulo, @Prioridad,
                         @FotosJson, @RespuestasGuiadasJson, @UbicacionLat, @UbicacionLng, @UbicacionDireccion,
-                        DATEADD(HOUR, 24, GETDATE()) -- Default expiration 24h
+                        DATEADD(MINUTE, 5, GETDATE()) -- Expiration 5 mins
                     );
                 END";
                 connection.Execute(spCreateRequest);

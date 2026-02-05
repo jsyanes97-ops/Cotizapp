@@ -30,29 +30,41 @@ export function IncomingRequests({ provider }: IncomingRequestsProps) {
 
   useEffect(() => {
     fetchRequests();
+
+    // Auto-refresh every 30 seconds to remove expired requests
+    const interval = setInterval(() => {
+      fetchRequests();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchRequests = async () => {
     try {
       const { data } = await requestService.getProviderRequests();
       // Map API response to ServiceRequest type if needed (assuming keys match for now)
-      setRequests(data.map((r: any) => ({
-        id: r.Id,
-        clientId: r.ClienteId,
-        category: r.Categoria,
-        description: r.Descripcion,
-        photos: r.FotosJson ? JSON.parse(r.FotosJson) : [],
-        location: {
-          lat: r.UbicacionLat,
-          lng: r.UbicacionLng,
-          address: r.UbicacionDireccion,
-          district: 'Unknown'
-        },
-        status: r.Estado.toLowerCase(),
-        guidedAnswers: r.RespuestasGuiadasJson ? JSON.parse(r.RespuestasGuiadasJson) : {},
-        createdAt: new Date(r.FechaSolicitud),
-        expiresAt: r.FechaExpiracion ? new Date(r.FechaExpiracion) : new Date(Date.now() + 24 * 60 * 60 * 1000)
-      })));
+      console.log("📊 DEBUG: Raw request data from API:", data);
+      setRequests(data.map((r: any) => {
+        const expiresAt = r.FechaExpiracion ? new Date(r.FechaExpiracion) : new Date(Date.now() + 5 * 60 * 1000);
+        console.log(`📊 Request ${r.Id}: FechaExpiracion=${r.FechaExpiracion}, expiresAt=${expiresAt}, diff=${Math.floor((expiresAt.getTime() - Date.now()) / 60000)} min`);
+        return {
+          id: r.Id,
+          clientId: r.ClienteId,
+          category: r.Categoria,
+          description: r.Descripcion,
+          photos: r.FotosJson ? JSON.parse(r.FotosJson) : [],
+          location: {
+            lat: r.UbicacionLat,
+            lng: r.UbicacionLng,
+            address: r.UbicacionDireccion,
+            district: 'Unknown'
+          },
+          status: r.Estado.toLowerCase(),
+          guidedAnswers: r.RespuestasGuiadasJson ? JSON.parse(r.RespuestasGuiadasJson) : {},
+          createdAt: new Date(r.FechaSolicitud),
+          expiresAt
+        };
+      }));
     } catch (error) {
       console.error("Failed to fetch requests", error);
     } finally {
@@ -121,7 +133,7 @@ export function IncomingRequests({ provider }: IncomingRequestsProps) {
         <div>
           <h2 className="text-2xl font-bold">Solicitudes Entrantes</h2>
           <p className="text-gray-600 mt-1">
-            Responde en los próximos 10 minutos para no perder la oportunidad
+            Responde en los próximos 5 minutos para no perder la oportunidad
           </p>
         </div>
         <Badge variant="secondary" className="text-lg px-3 py-1">
