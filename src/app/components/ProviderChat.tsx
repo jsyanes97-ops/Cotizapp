@@ -428,6 +428,9 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
         onOpenChange={setShowPaymentModal}
         amount={quotedPrice || 0}
         onSuccess={() => executeNegotiationAction()}
+        providerName={providerName}
+        itemName={serviceName}
+        itemType={type === 'Producto' ? 'Producto' : 'Servicio'}
       />
 
     </Card>

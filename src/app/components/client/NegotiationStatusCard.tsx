@@ -282,6 +282,9 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                 onOpenChange={setShowPaymentModal}
                 amount={neg.OfertaActual ?? neg.ofertaActual ?? 0}
                 onSuccess={() => executeAction('Aceptar')}
+                providerName={neg.ProveedorNombre || 'Proveedor'}
+                itemName={neg.Titulo || neg.titulo || 'Servicio'}
+                itemType={neg.Tipo === 'Producto' ? 'Producto' : 'Servicio'}
             />
         </>
     );

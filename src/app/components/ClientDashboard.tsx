@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Button } from '@/app/components/ui/button';
-import { MessageSquare, Users, History, ShoppingBag, Package2, LogIn, Settings } from 'lucide-react';
+import { MessageSquare, Users, History, ShoppingBag, Package2, LogIn, Settings, CreditCard } from 'lucide-react';
 import { ChatContainer } from './ChatContainer';
 import { ChatList } from './chat/ChatList';
 import { RequestHistory } from './client/RequestHistory';
 import { ServiceMarketplace } from './client/ServiceMarketplace';
 import { ProductMarketplace } from './client/ProductMarketplace';
+import { PaymentHistory } from './client/PaymentHistory';
 import { UserSettings } from './UserSettings';
 import { authService } from '@/services';
 
@@ -80,7 +81,7 @@ export function ClientDashboard({ onLogout }: { onLogout?: () => void }) {
 
       {/* Tabs Navigation */}
       <Tabs defaultValue="chat" className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-6 rounded-none border-b h-auto">
+        <TabsList className="grid w-full grid-cols-7 rounded-none border-b h-auto">
           <TabsTrigger value="chat" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 py-2 sm:py-3">
             <MessageSquare className="w-4 h-4" />
             <span className="text-[10px] sm:text-sm">Solicitud</span>
@@ -100,6 +101,10 @@ export function ClientDashboard({ onLogout }: { onLogout?: () => void }) {
           <TabsTrigger value="history" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 py-2 sm:py-3">
             <History className="w-4 h-4" />
             <span className="text-[10px] sm:text-sm">Historial</span>
+          </TabsTrigger>
+          <TabsTrigger value="payments" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 py-2 sm:py-3">
+            <CreditCard className="w-4 h-4" />
+            <span className="text-[10px] sm:text-sm">Pagos</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 py-2 sm:py-3">
             <Settings className="w-4 h-4" />
@@ -125,6 +130,10 @@ export function ClientDashboard({ onLogout }: { onLogout?: () => void }) {
 
         <TabsContent value="history" className="flex-1 mt-0 overflow-y-auto p-2 sm:p-4">
           <RequestHistory />
+        </TabsContent>
+
+        <TabsContent value="payments" className="flex-1 mt-0 overflow-y-auto p-2 sm:p-4">
+          <PaymentHistory />
         </TabsContent>
 
         <TabsContent value="settings" className="flex-1 mt-0 overflow-y-auto">

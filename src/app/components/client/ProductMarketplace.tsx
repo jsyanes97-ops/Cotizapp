@@ -581,6 +581,9 @@ export function ProductMarketplace() {
         onOpenChange={setShowPaymentModal}
         amount={pendingPurchase ? Number((pendingPurchase.product.price * pendingPurchase.quantity).toFixed(2)) : 0}
         onSuccess={executePurchase}
+        providerName={pendingPurchase?.product.providerName}
+        itemName={pendingPurchase?.product.title}
+        itemType="Producto"
       />
     </div>
   );

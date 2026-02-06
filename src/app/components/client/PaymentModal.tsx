@@ -11,9 +11,12 @@ interface PaymentModalProps {
     onOpenChange: (open: boolean) => void;
     amount: number;
     onSuccess: () => void;
+    providerName?: string;
+    itemName?: string;
+    itemType?: 'Producto' | 'Servicio';
 }
 
-export function PaymentModal({ open, onOpenChange, amount, onSuccess }: PaymentModalProps) {
+export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerName, itemName, itemType }: PaymentModalProps) {
     const [step, setStep] = useState<'form' | 'processing' | 'success'>('form');
     const [cardData, setCardData] = useState({
         number: '',
@@ -30,10 +33,27 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess }: PaymentM
         }
     }, [open]);
 
+    const savePaymentToHistory = () => {
+        try {
+            const existingPayments = JSON.parse(localStorage.getItem('user_payments') || '[]');
+            const newPayment = {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                amount,
+                providerName: providerName || 'Proveedor',
+                itemName: itemName || 'Concepto General',
+                itemType: itemType || 'Servicio',
+                status: 'Completado'
+            };
+            localStorage.setItem('user_payments', JSON.stringify([newPayment, ...existingPayments]));
+        } catch (e) {
+            console.error('Error saving payment to history:', e);
+        }
+    };
+
     const handleProcessPayment = () => {
         // Basic validation simulation
         if (!cardData.number || !cardData.cvv || !cardData.name) {
-            // In a real app we would show field errors
             return;
         }
 
@@ -41,6 +61,7 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess }: PaymentM
 
         // Simulate API call delay
         setTimeout(() => {
+            savePaymentToHistory();
             setStep('success');
 
             // Close after showing success for a moment
@@ -145,10 +166,12 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess }: PaymentM
                                 <span>Pagos seguros y encriptados. No guardamos tu tarjeta.</span>
                             </div>
 
-                            <DialogFooter>
-                                <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full">Cancelar</Button>
+                            <DialogFooter className="flex flex-col gap-2 sm:flex-col">
                                 <Button onClick={handleProcessPayment} className="w-full bg-blue-600 hover:bg-blue-700">
                                     Pagar ${amount.toFixed(2)}
+                                </Button>
+                                <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full">
+                                    Cancelar
                                 </Button>
                             </DialogFooter>
                         </motion.div>
