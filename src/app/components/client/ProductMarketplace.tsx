@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/app/components/ui/dialog';
 import { Label } from '@/app/components/ui/label';
 import { marketplaceService } from '@/services';
+import { PaymentModal } from './PaymentModal';
 
 const categoryNames: Record<ProductCategory, string> = {
   'electronica': 'Electrónica',
@@ -62,6 +63,10 @@ export function ProductMarketplace() {
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
+
+  // Payment State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingPurchase, setPendingPurchase] = useState<{ product: ProductListing, quantity: number } | null>(null);
 
   // State for products
   const [products, setProducts] = useState<ProductListing[]>([]);
@@ -141,7 +146,17 @@ export function ProductMarketplace() {
     return matchesSearch && matchesCategory && product.isActive;
   });
 
-  const handleBuyNow = async (product: ProductListing) => {
+  const handleBuyNow = (product: ProductListing) => {
+    if (!product) return;
+
+    // Store pending purchase and open payment modal
+    setPendingPurchase({ product, quantity: purchaseQuantity });
+    setShowPaymentModal(true);
+  };
+
+  const executePurchase = async () => {
+    if (!pendingPurchase) return;
+    const { product, quantity } = pendingPurchase;
     if (!product) return;
 
     try {
@@ -561,6 +576,12 @@ export function ProductMarketplace() {
           )}
         </DialogContent>
       </Dialog>
+      <PaymentModal
+        open={showPaymentModal}
+        onOpenChange={setShowPaymentModal}
+        amount={pendingPurchase ? Number((pendingPurchase.product.price * pendingPurchase.quantity).toFixed(2)) : 0}
+        onSuccess={executePurchase}
+      />
     </div>
   );
 }

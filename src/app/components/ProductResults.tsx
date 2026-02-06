@@ -3,16 +3,18 @@ import { Card, CardContent } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { ProductListing } from '@/types';
-import { 
-  Star, 
-  MapPin, 
-  ShoppingCart, 
+import {
+  Star,
+  MapPin,
+  ShoppingCart,
   TrendingUp,
   Package2
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/app/components/ui/dialog';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { marketplaceService } from '@/services';
+import { PaymentModal } from './client/PaymentModal';
 
 interface ProductResultsProps {
   products: ProductListing[];
@@ -30,9 +32,33 @@ export function ProductResults({ products }: ProductResultsProps) {
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
 
+  // Payment State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState<ProductListing | null>(null);
+
   const handleBuyNow = (product: ProductListing) => {
-    alert(`✅ Compra realizada!\n\nProducto: ${product.title}\nPrecio: $${product.price}\n\nEl vendedor ${product.providerName} se contactará contigo pronto.`);
-    setSelectedProduct(null);
+    setPendingProduct(product);
+    setShowPaymentModal(true);
+  };
+
+  const executePurchase = async () => {
+    if (!pendingProduct) return;
+
+    try {
+      // Defaulting to quantity 1 for quick buy from results
+      await marketplaceService.purchaseProduct(
+        pendingProduct.id,
+        1,
+        `Solicitud de compra rápida de 1 unidad`
+      );
+
+      alert(`✅ ¡Compra realizada exitosamente!\n\nProducto: ${pendingProduct.title}\nPrecio: $${pendingProduct.price}\n\nEl vendedor ${pendingProduct.providerName} se contactará contigo pronto.`);
+    } catch (error: any) {
+      console.error('Purchase Error:', error);
+      alert('Error al realizar la compra');
+    } finally {
+      setPendingProduct(null);
+    }
   };
 
   const handleNegotiate = (product: ProductListing) => {
@@ -42,7 +68,7 @@ export function ProductResults({ products }: ProductResultsProps) {
 
   const handleSendOffer = () => {
     if (!offerAmount || !selectedProduct) return;
-    
+
     const offer = parseFloat(offerAmount);
     if (selectedProduct.minNegotiablePrice && offer < selectedProduct.minNegotiablePrice) {
       alert(`⚠️ Tu oferta debe ser al menos $${selectedProduct.minNegotiablePrice}`);
@@ -73,7 +99,7 @@ export function ProductResults({ products }: ProductResultsProps) {
       <div className="space-y-3">
         {products.map((product) => (
           <div key={product.id} className="flex justify-start">
-            <Card 
+            <Card
               className="max-w-[85%] hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-l-green-500"
               onClick={() => setSelectedProduct(product)}
             >
@@ -141,8 +167,8 @@ export function ProductResults({ products }: ProductResultsProps) {
 
                     {/* Actions */}
                     <div className="flex gap-2">
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="flex-1"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -153,8 +179,8 @@ export function ProductResults({ products }: ProductResultsProps) {
                         Comprar
                       </Button>
                       {product.allowNegotiation && (
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -316,6 +342,12 @@ export function ProductResults({ products }: ProductResultsProps) {
           )}
         </DialogContent>
       </Dialog>
+      <PaymentModal
+        open={showPaymentModal}
+        onOpenChange={setShowPaymentModal}
+        amount={pendingProduct ? pendingProduct.price : 0}
+        onSuccess={executePurchase}
+      />
     </>
   );
 }
