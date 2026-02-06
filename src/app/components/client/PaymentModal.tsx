@@ -43,7 +43,7 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
                 providerName: providerName || 'Proveedor',
                 itemName: itemName || 'Concepto General',
                 itemType: itemType || 'Servicio',
-                status: 'Completado'
+                status: 'Retenido'
             };
             localStorage.setItem('user_payments', JSON.stringify([newPayment, ...existingPayments]));
         } catch (e) {
