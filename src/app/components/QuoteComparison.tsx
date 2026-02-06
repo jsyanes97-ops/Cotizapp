@@ -39,7 +39,7 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
   };
 
   const handleUpdateQuote = (updatedQuote: Quote) => {
-    setQuotesData(prev => 
+    setQuotesData(prev =>
       prev.map(q => q.id === updatedQuote.id ? updatedQuote : q)
     );
   };
@@ -115,9 +115,13 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
             ✅ Marcar como Completado
           </Button>
         </div>
-        <ProviderChat 
-          clientName="Cliente"
-          requestDescription="Necesito reparar una fuga en el lavaplatos"
+        <ProviderChat
+          conversationId={selectedQuote.id}
+          providerId={selectedQuote.providerId}
+          providerName={selectedQuote.providerName}
+          serviceName="Servicio de Plomería"
+          quotedPrice={selectedQuote.price}
+          onBack={() => setChatMode(false)}
         />
       </div>
     );
@@ -135,7 +139,7 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
             Servicio con {selectedQuote.providerName} • ${selectedQuote.price} USD
           </p>
         </div>
-        <RatingSystem 
+        <RatingSystem
           providerName={selectedQuote.providerName}
           onSubmit={handleRatingSubmit}
         />
@@ -158,9 +162,8 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
         {sortedQuotes.map((quote, index) => (
           <Card
             key={quote.id}
-            className={`p-4 transition-all hover:shadow-md ${
-              selectedQuoteId === quote.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-            }`}
+            className={`p-4 transition-all hover:shadow-md ${selectedQuoteId === quote.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+              }`}
           >
             {/* Badge de mejor opción */}
             {index === 0 && !selectedQuoteId && (
@@ -248,8 +251,8 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
               ✅ <strong>Cotización seleccionada.</strong> Ahora puedes chatear directamente con el proveedor para coordinar detalles.
             </p>
           </div>
-          <Button 
-            className="w-full" 
+          <Button
+            className="w-full"
             size="lg"
             onClick={handleStartChat}
           >

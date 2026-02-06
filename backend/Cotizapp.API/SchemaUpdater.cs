@@ -1507,20 +1507,104 @@ END";
                 connection.Execute(spObtenerNegocProv);
                 Console.WriteLine("sp_ObtenerNegociacionesProveedor Created/Updated.");
 
-                // 2.6 sp_ObtenerMensajes
-                var spGetMessages = @"
-                CREATE OR ALTER PROCEDURE sp_ObtenerMensajes
-                    @ConversacionId UNIQUEIDENTIFIER
-                AS
-                BEGIN
-                    SET NOCOUNT ON;
-                    SELECT * 
-                    FROM tbl_MensajesChat
-                    WHERE ConversacionId = @ConversacionId
-                    ORDER BY FechaEnvio ASC;
-                END";
-                connection.Execute(spGetMessages);
-                Console.WriteLine("sp_ObtenerMensajes Created/Updated.");
+                // 2.7 Escrow Payments Tables
+                Console.WriteLine("Ensuring Escrow Payments Schema...");
+                var sqlPaymentsSchema = @"
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='tbl_Pagos' AND xtype='U')
+                    CREATE TABLE tbl_Pagos (
+                        Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+                        ClienteId UNIQUEIDENTIFIER NOT NULL FOREIGN KEY REFERENCES tbl_Usuarios(Id),
+                        ProveedorId UNIQUEIDENTIFIER NOT NULL FOREIGN KEY REFERENCES tbl_Usuarios(Id),
+                        Monto DECIMAL(10, 2) NOT NULL,
+                        ItemName NVARCHAR(200) NOT NULL,
+                        ItemType NVARCHAR(20) NOT NULL,
+                        Status NVARCHAR(20) NOT NULL DEFAULT 'Retenido',
+                        FechaCreacion DATETIME DEFAULT GETDATE(),
+                        FechaActualizacion DATETIME DEFAULT GETDATE()
+                    );
+
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='tbl_PagosLogs' AND xtype='U')
+                    CREATE TABLE tbl_PagosLogs (
+                        Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+                        PagoId UNIQUEIDENTIFIER NOT NULL FOREIGN KEY REFERENCES tbl_Pagos(Id),
+                        Accion NVARCHAR(100) NOT NULL,
+                        Mensaje NVARCHAR(MAX),
+                        FechaCreacion DATETIME DEFAULT GETDATE()
+                    );";
+                connection.Execute(sqlPaymentsSchema);
+
+                // 2.8 Escrow Payments SPs
+                Console.WriteLine("Registering Escrow SPs...");
+                
+                connection.Execute(@"
+                    CREATE OR ALTER PROCEDURE sp_RegistrarPago
+                        @ClienteId UNIQUEIDENTIFIER,
+                        @ProveedorId UNIQUEIDENTIFIER,
+                        @Monto DECIMAL(10, 2),
+                        @ItemName NVARCHAR(200),
+                        @ItemType NVARCHAR(20)
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        DECLARE @PagoId UNIQUEIDENTIFIER = NEWID();
+                        INSERT INTO tbl_Pagos (Id, ClienteId, ProveedorId, Monto, ItemName, ItemType, Status)
+                        VALUES (@PagoId, @ClienteId, @ProveedorId, @Monto, @ItemName, @ItemType, 'Retenido');
+                        INSERT INTO tbl_PagosLogs (PagoId, Accion, Mensaje)
+                        VALUES (@PagoId, 'Pago Realizado', 'Fondos retenidos en garantía');
+                        SELECT * FROM tbl_Pagos WHERE Id = @PagoId;
+                    END;");
+
+                connection.Execute(@"
+                    CREATE OR ALTER PROCEDURE sp_ObtenerHistorialPagosCliente
+                        @ClienteId UNIQUEIDENTIFIER
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        SELECT p.*, u.Nombre as ProviderName
+                        FROM tbl_Pagos p
+                        INNER JOIN tbl_Usuarios u ON p.ProveedorId = u.Id
+                        WHERE p.ClienteId = @ClienteId
+                        ORDER BY p.FechaCreacion DESC;
+                    END;");
+
+                connection.Execute(@"
+                    CREATE OR ALTER PROCEDURE sp_ObtenerHistorialVentasProveedor
+                        @ProveedorId UNIQUEIDENTIFIER
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        SELECT p.*, u.Nombre as ClientName
+                        FROM tbl_Pagos p
+                        INNER JOIN tbl_Usuarios u ON p.ClienteId = u.Id
+                        WHERE p.ProveedorId = @ProveedorId
+                        ORDER BY p.FechaCreacion DESC;
+                    END;");
+
+                connection.Execute(@"
+                    CREATE OR ALTER PROCEDURE sp_ActualizarEstadoPago
+                        @PagoId UNIQUEIDENTIFIER,
+                        @NuevoEstado NVARCHAR(20),
+                        @Accion NVARCHAR(100),
+                        @Mensaje NVARCHAR(MAX) = NULL
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        UPDATE tbl_Pagos SET Status = @NuevoEstado, FechaActualizacion = GETDATE() WHERE Id = @PagoId;
+                        INSERT INTO tbl_PagosLogs (PagoId, Accion, Mensaje)
+                        VALUES (@PagoId, @Accion, @Mensaje);
+                        SELECT * FROM tbl_Pagos WHERE Id = @PagoId;
+                    END;");
+
+                connection.Execute(@"
+                    CREATE OR ALTER PROCEDURE sp_ObtenerLogsPago
+                        @PagoId UNIQUEIDENTIFIER
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        SELECT * FROM tbl_PagosLogs WHERE PagoId = @PagoId ORDER BY FechaCreacion ASC;
+                    END;");
+
+                Console.WriteLine("Escrow Payments Schema Ensured.");
             }
             catch (Exception ex)
             {

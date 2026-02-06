@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Cotizapp.API.Services;
-using System;
-using System.Threading.Tasks;
+using Cotizapp.API.Models;
 
 namespace Cotizapp.API.Controllers
 {
@@ -16,30 +15,90 @@ namespace Cotizapp.API.Controllers
             _db = db;
         }
 
-        public class UpgradeRequest
-        {
-            public Guid ProviderId { get; set; }
-            public string PaymentMethod { get; set; } // 'CreditCard', 'Yappy'
-            // In a real scenario, token or card details would go here
-        }
-
-        [HttpPost("upgrade")]
-        public async Task<IActionResult> UpgradeMembership([FromBody] UpgradeRequest req)
+        [HttpPost]
+        public async Task<IActionResult> CreatePayment([FromBody] PaymentRequestDto req, [FromQuery] Guid clientId)
         {
             try
             {
-                // 1. Simulate Payment Gateway Processing
-                // await PaymentGateway.Charge(req.Token, 5.00);
-                
-                // 2. If successful, record in DB and update profile
-                await _db.EditData("sp_RegistrarPagoMembresia", new {
-                    UsuarioId = req.ProviderId,
-                    Monto = 5.00, // Hardcoded premium price for now
-                    MetodoPago = req.PaymentMethod,
-                    ReferenciaExterna = "SIM-" + Guid.NewGuid().ToString().Substring(0, 8)
+                var payment = await _db.GetAsync<Payment>("sp_RegistrarPago", new {
+                    ClienteId = clientId,
+                    ProveedorId = req.ProveedorId,
+                    Monto = req.Monto,
+                    ItemName = req.ItemName,
+                    ItemType = req.ItemType
                 });
+                return Ok(payment);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
 
-                return Ok(new { Message = "Membresía actualizada a Premium exitosamente" });
+        [HttpGet("client/{clientId}")]
+        public async Task<IActionResult> GetByClient(Guid clientId)
+        {
+            try
+            {
+                var payments = await _db.GetAllAsync<Payment>("sp_ObtenerHistorialPagosCliente", new { ClienteId = clientId });
+                
+                // For each payment, load its logs
+                var paymentList = payments.ToList();
+                foreach (var p in paymentList)
+                {
+                    var logs = await _db.GetAllAsync<PaymentLog>("sp_ObtenerLogsPago", new { PagoId = p.Id });
+                    // We'll need a way to return these. For simplicity in this DTO we might add them or return them separately.
+                    // Let's assume the frontend will fetch them if needed or we extend the model.
+                }
+
+                return Ok(paymentList);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpGet("provider/{providerId}")]
+        public async Task<IActionResult> GetByProvider(Guid providerId)
+        {
+            try
+            {
+                var payments = await _db.GetAllAsync<Payment>("sp_ObtenerHistorialVentasProveedor", new { ProveedorId = providerId });
+                return Ok(payments);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id}/status")]
+        public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdatePaymentStatusDto req)
+        {
+            try
+            {
+                var payment = await _db.GetAsync<Payment>("sp_ActualizarEstadoPago", new {
+                    PagoId = id,
+                    NuevoEstado = req.NuevoEstado,
+                    Accion = req.Accion,
+                    Mensaje = req.Mensaje
+                });
+                return Ok(payment);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpGet("{id}/logs")]
+        public async Task<IActionResult> GetLogs(Guid id)
+        {
+            try
+            {
+                var logs = await _db.GetAllAsync<PaymentLog>("sp_ObtenerLogsPago", new { PagoId = id });
+                return Ok(logs);
             }
             catch (Exception ex)
             {

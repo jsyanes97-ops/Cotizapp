@@ -153,6 +153,7 @@ export function ChatList({ onBack, userRole }: ChatListProps) {
                     <div className="flex-1 overflow-hidden">
                         <ProviderChat
                             conversationId={selectedChat.id}
+                            providerId={selectedChat.providerId}
                             providerName={selectedChat.providerName}
                             serviceName={selectedChat.serviceCategory}
                             quotedPrice={selectedChat.quotedPrice}

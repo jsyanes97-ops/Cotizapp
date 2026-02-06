@@ -5,18 +5,20 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { CreditCard, Loader2, CheckCircle, ShieldCheck, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import api from '@/services/api';
 
 interface PaymentModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     amount: number;
     onSuccess: () => void;
+    providerId: string; // Required for backend integration
     providerName?: string;
     itemName?: string;
     itemType?: 'Producto' | 'Servicio';
 }
 
-export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerName, itemName, itemType }: PaymentModalProps) {
+export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerId, providerName, itemName, itemType }: PaymentModalProps) {
     const [step, setStep] = useState<'form' | 'processing' | 'success'>('form');
     const [cardData, setCardData] = useState({
         number: '',
@@ -33,8 +35,25 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
         }
     }, [open]);
 
-    const savePaymentToHistory = () => {
+    const processPaymentBackend = async () => {
         try {
+            // Get client ID from localStorage (or current session)
+            const userStr = localStorage.getItem('user');
+            const user = userStr ? JSON.parse(userStr) : null;
+            const clientId = user?.id || '00000000-0000-0000-0000-000000000000'; // Ensure valid GUID
+
+            const payload = {
+                proveedorId: providerId,
+                monto: amount,
+                itemName: itemName || 'Concepto General',
+                itemType: itemType || 'Servicio'
+            };
+
+            console.log('Sending Payment Request:', { clientId, payload });
+
+            await api.post(`/Payments?clientId=${clientId}`, payload);
+
+            // Compatibility with legacy local storage for now (optional but good for a smooth transition)
             const existingPayments = JSON.parse(localStorage.getItem('user_payments') || '[]');
             const newPayment = {
                 id: crypto.randomUUID(),
@@ -44,17 +63,17 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
                 itemName: itemName || 'Concepto General',
                 itemType: itemType || 'Servicio',
                 status: 'Retenido',
-                logs: [
-                    { date: new Date().toISOString(), action: 'Pago Realizado', message: 'Fondos retenidos en garantía' }
-                ]
+                backendIntegrated: true
             };
             localStorage.setItem('user_payments', JSON.stringify([newPayment, ...existingPayments]));
+
         } catch (e) {
-            console.error('Error saving payment to history:', e);
+            console.error('Error processing payment in backend:', e);
+            throw e; // Re-throw to handle in UI
         }
     };
 
-    const handleProcessPayment = () => {
+    const handleProcessPayment = async () => {
         // Basic validation simulation
         if (!cardData.number || !cardData.cvv || !cardData.name) {
             return;
@@ -62,9 +81,10 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
 
         setStep('processing');
 
-        // Simulate API call delay
-        setTimeout(() => {
-            savePaymentToHistory();
+        try {
+            // Real API Call
+            await processPaymentBackend();
+
             setStep('success');
 
             // Close after showing success for a moment
@@ -72,7 +92,29 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
                 onSuccess();
                 onOpenChange(false);
             }, 1500);
-        }, 2500);
+        } catch (error: any) {
+            console.error('Payment Processing Error:', error);
+            const data = error.response?.data;
+            console.error('Error Details:', data);
+
+            setStep('form');
+
+            let detailedError = '';
+            if (data?.errors) {
+                // ASP.NET Core Validation Errors (dictionary of arrays)
+                detailedError = Object.entries(data.errors)
+                    .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+                    .join(' | ');
+            } else if (data?.Error) {
+                detailedError = data.Error;
+            } else if (data?.message) {
+                detailedError = data.message;
+            } else {
+                detailedError = error.message || 'Desconocido';
+            }
+
+            alert(`Error al procesar el pago: ${detailedError}. Por favor intente de nuevo.`);
+        }
     };
 
     const handleFormatCardNumber = (e: React.ChangeEvent<HTMLInputElement>) => {

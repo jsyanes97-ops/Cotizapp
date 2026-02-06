@@ -3,67 +3,129 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { CreditCard, Calendar, User, Package, Hammer, CheckCircle2, AlertTriangle, MessageSquare, History as HistoryIcon, Clock } from 'lucide-react';
+import { CreditCard, Calendar, User, Package, Hammer, CheckCircle2, AlertTriangle, MessageSquare, History as HistoryIcon, Clock, Loader2 } from 'lucide-react';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Textarea } from '@/app/components/ui/textarea';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import api from '@/services/api';
 
 interface PaymentLog {
-    date: string;
-    action: string;
-    message?: string;
+    id?: string;
+    pagoId?: string;
+    accion: string;
+    mensaje?: string;
+    fechaCreacion: string;
 }
 
 interface PaymentRecord {
     id: string;
-    date: string;
-    amount: number;
-    providerName: string;
+    clienteId: string;
+    proveedorId: string;
+    monto: number;
     itemName: string;
     itemType: 'Producto' | 'Servicio';
     status: string;
+    fechaCreacion: string;
+    providerName?: string; // Joined from backend
+    clientName?: string; // Joined from backend
     logs?: PaymentLog[];
 }
 
 export function PaymentHistory() {
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
+    const [loading, setLoading] = useState(true);
     const [disputeOpen, setDisputeOpen] = useState(false);
     const [selectedPayment, setSelectedPayment] = useState<string | null>(null);
     const [disputeReason, setDisputeReason] = useState('');
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    const loadPayments = async () => {
+        try {
+            setLoading(true);
+            const userStr = localStorage.getItem('user');
+            const user = userStr ? JSON.parse(userStr) : null;
+            const clientId = user?.id || '';
+
+            if (!clientId) {
+                // Fallback to local storage if no user logged in (dev mode)
+                const stored = localStorage.getItem('user_payments');
+                if (stored) setPayments(JSON.parse(stored));
+                setLoading(false);
+                return;
+            }
+
+            const res = await api.get(`/Payments/client/${clientId}`);
+            const data = Array.isArray(res.data) ? res.data : [];
+            const backendPayments = data.map((p: any) => ({
+                id: p.id,
+                clienteId: p.clienteId,
+                proveedorId: p.proveedorId,
+                monto: p.monto,
+                itemName: p.itemName,
+                itemType: p.itemType,
+                status: p.status,
+                fechaCreacion: p.fechaCreacion,
+                providerName: p.providerName
+            }));
+
+            // Fetch logs for each payment (could be optimized with a single call if needed)
+            const paymentsWithLogs = await Promise.all(
+                backendPayments.map(async (p: any) => {
+                    try {
+                        const logsRes = await api.get(`/Payments/${p.id}/logs`);
+                        return { ...p, logs: logsRes.data };
+                    } catch (e) {
+                        return p;
+                    }
+                })
+            );
+
+            setPayments(paymentsWithLogs);
+        } catch (e) {
+            console.error('Error loading payments from backend:', e);
+            // Fallback to local
+            const stored = localStorage.getItem('user_payments');
+            if (stored) setPayments(JSON.parse(stored));
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const loadPayments = () => {
-            try {
-                const stored = localStorage.getItem('user_payments');
-                if (stored) {
-                    setPayments(JSON.parse(stored));
-                }
-            } catch (e) {
-                console.error('Error loading payments:', e);
-            }
-        };
-
         loadPayments();
-        // Add event listener to refresh when localStorage changes (in case modal is in another component)
         window.addEventListener('storage', loadPayments);
         return () => window.removeEventListener('storage', loadPayments);
     }, []);
 
-    if (payments.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border-2 border-dashed">
-                <div className="bg-gray-100 p-4 rounded-full mb-4">
-                    <CreditCard className="w-12 h-12 text-gray-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">No hay pagos registrados</h3>
-                <p className="text-gray-500 max-w-sm mt-2">
-                    Aquí aparecerá el historial de tus compras y servicios pagados a través de la plataforma.
-                </p>
-            </div>
-        );
-    }
+    const updatePaymentStatus = async (paymentId: string, newStatus: string, action: string, message?: string) => {
+        try {
+            setActionLoading(paymentId);
+            await api.patch(`/Payments/${paymentId}/status`, {
+                NuevoEstado: newStatus,
+                Accion: action,
+                Mensaje: message
+            });
+            await loadPayments();
+        } catch (e) {
+            console.error('Error updating status:', e);
+            alert('Error al actualizar el estado del pago');
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const openDispute = async () => {
+        if (!selectedPayment || !disputeReason) return;
+        await updatePaymentStatus(selectedPayment, 'En Disputa', 'Disputa Abierta', `Motivo: ${disputeReason}`);
+        setDisputeOpen(false);
+        setDisputeReason('');
+    };
+
+    const releaseFunds = async (paymentId: string) => {
+        await updatePaymentStatus(paymentId, 'Liberado', 'Fondos Liberados', 'El cliente confirmó la recepción');
+    };
 
     const getStatusConfig = (status: string) => {
         switch (status) {
@@ -80,56 +142,39 @@ export function PaymentHistory() {
         }
     };
 
-    const openDispute = () => {
-        if (!selectedPayment || !disputeReason) return;
-
+    const safeFormatDate = (dateStr: string, formatStr: string) => {
         try {
-            const stored = localStorage.getItem('user_payments');
-            if (stored) {
-                const all: PaymentRecord[] = JSON.parse(stored);
-                const updated = all.map(p =>
-                    p.id === selectedPayment ? {
-                        ...p,
-                        status: 'En Disputa',
-                        logs: [...(p.logs || []), {
-                            date: new Date().toISOString(),
-                            action: 'Disputa Abierta',
-                            message: `Motivo: ${disputeReason}`
-                        }]
-                    } : p
-                );
-                localStorage.setItem('user_payments', JSON.stringify(updated));
-                setPayments(updated);
-                window.dispatchEvent(new Event('storage'));
-                setDisputeOpen(false);
-                setDisputeReason('');
-            }
+            if (!dateStr) return 'Fecha pendiente';
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'Fecha inválida';
+            return format(date, formatStr, { locale: es });
         } catch (e) {
-            console.error('Error opening dispute:', e);
+            return 'Error en fecha';
         }
     };
 
-    const releaseFunds = (paymentId: string) => {
-        try {
-            const stored = localStorage.getItem('user_payments');
-            if (stored) {
-                const allPayments: PaymentRecord[] = JSON.parse(stored);
-                const updated = allPayments.map(p =>
-                    p.id === paymentId ? {
-                        ...p,
-                        status: 'Liberado',
-                        logs: [...(p.logs || []), { date: new Date().toISOString(), action: 'Fondos Liberados', message: 'El cliente confirmó la recepción' }]
-                    } : p
-                );
-                localStorage.setItem('user_payments', JSON.stringify(updated));
-                setPayments(updated);
-                // Trigger storage event for other components
-                window.dispatchEvent(new Event('storage'));
-            }
-        } catch (e) {
-            console.error('Error releasing funds:', e);
-        }
-    };
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
+                <p className="text-gray-500">Cargando historial...</p>
+            </div>
+        );
+    }
+
+    if (payments.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border-2 border-dashed">
+                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                    <CreditCard className="w-12 h-12 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">No hay pagos registrados</h3>
+                <p className="text-gray-500 max-w-sm mt-2">
+                    Aquí aparecerá el historial de tus compras y servicios pagados a través de la plataforma.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -176,14 +221,14 @@ export function PaymentHistory() {
                                                 </div>
                                                 <div className="flex items-center text-xs text-gray-400 gap-2">
                                                     <Calendar className="w-3.5 h-3.5" />
-                                                    <span>{format(new Date(payment.date), "d 'de' MMMM, yyyy - HH:mm", { locale: es })}</span>
+                                                    <span>{safeFormatDate(payment.fechaCreacion, "d 'de' MMMM, yyyy - HH:mm")}</span>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="flex flex-row sm:flex-col justify-between sm:items-end sm:justify-center gap-3 border-t sm:border-t-0 pt-3 sm:pt-0">
                                         <p className="text-2xl font-bold text-gray-900">
-                                            ${payment.amount.toFixed(2)}
+                                            ${Number(payment.monto).toFixed(2)}
                                         </p>
                                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${statusCfg.color}`}>
                                             {payment.status === 'Liberado' && <CheckCircle2 className="w-3.5 h-3.5" />}
@@ -194,7 +239,9 @@ export function PaymentHistory() {
                                                 size="sm"
                                                 className="bg-green-600 hover:bg-green-700 text-white text-xs h-8"
                                                 onClick={() => releaseFunds(payment.id)}
+                                                disabled={actionLoading === payment.id}
                                             >
+                                                {actionLoading === payment.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                                                 Liberar Fondos
                                             </Button>
                                         )}
@@ -231,12 +278,12 @@ export function PaymentHistory() {
                                                     </div>
                                                     <div className="pb-1">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-sm font-bold text-gray-900">{log.action}</span>
+                                                            <span className="text-sm font-bold text-gray-900">{log.accion}</span>
                                                             <span className="text-[10px] text-gray-400">
-                                                                {format(new Date(log.date), "HH:mm'h' - d MMM", { locale: es })}
+                                                                {safeFormatDate(log.fechaCreacion, "HH:mm'h' - d MMM")}
                                                             </span>
                                                         </div>
-                                                        {log.message && <p className="text-xs text-gray-500 mt-0.5">{log.message}</p>}
+                                                        {log.mensaje && <p className="text-xs text-gray-500 mt-0.5">{log.mensaje}</p>}
                                                     </div>
                                                 </div>
                                             ))}

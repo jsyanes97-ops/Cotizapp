@@ -347,6 +347,7 @@ export function ProductResults({ products }: ProductResultsProps) {
         onOpenChange={setShowPaymentModal}
         amount={pendingProduct ? pendingProduct.price : 0}
         onSuccess={executePurchase}
+        providerId={pendingProduct?.providerId || ''}
         providerName={pendingProduct?.providerName}
         itemName={pendingProduct?.title}
         itemType="Producto"

@@ -11,6 +11,7 @@ import { PaymentModal } from './client/PaymentModal';
 
 interface ProviderChatProps {
   conversationId: string;
+  providerId: string; // Added for backend integration
   providerName: string;
   serviceName: string;
   quotedPrice: number;
@@ -23,7 +24,7 @@ interface ProviderChatProps {
   onComplete?: () => void;
 }
 
-export function ProviderChat({ conversationId, providerName, serviceName, quotedPrice, negotiationId, negotiationCounter, type, status, userRole, onBack, onComplete }: ProviderChatProps) {
+export function ProviderChat({ conversationId, providerId, providerName, serviceName, quotedPrice, negotiationId, negotiationCounter, type, status, userRole, onBack, onComplete }: ProviderChatProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -428,6 +429,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
         onOpenChange={setShowPaymentModal}
         amount={quotedPrice || 0}
         onSuccess={() => executeNegotiationAction()}
+        providerId={providerId}
         providerName={providerName}
         itemName={serviceName}
         itemType={type === 'Producto' ? 'Producto' : 'Servicio'}

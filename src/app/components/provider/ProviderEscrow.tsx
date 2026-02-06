@@ -2,91 +2,116 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { Package, Hammer, CheckCircle2, DollarSign, Clock, ShieldCheck, History as HistoryIcon, AlertTriangle } from 'lucide-react';
+import { Package, Hammer, CheckCircle2, DollarSign, Clock, ShieldCheck, History as HistoryIcon, AlertTriangle, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import api from '@/services/api';
 
 interface PaymentLog {
-    date: string;
-    action: string;
-    message?: string;
+    id?: string;
+    pagoId?: string;
+    accion: string;
+    mensaje?: string;
+    fechaCreacion: string;
 }
 
 interface EscrowPayment {
     id: string;
-    date: string;
-    amount: number;
-    providerName: string;
+    clienteId: string;
+    proveedorId: string;
+    monto: number;
     itemName: string;
     itemType: 'Producto' | 'Servicio';
     status: string;
+    fechaCreacion: string;
+    providerName?: string;
+    clientName?: string;
     logs?: PaymentLog[];
 }
 
 export function ProviderEscrow() {
     const [payments, setPayments] = useState<EscrowPayment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    const loadPayments = async () => {
+        try {
+            setLoading(true);
+            const userStr = localStorage.getItem('user');
+            const user = userStr ? JSON.parse(userStr) : null;
+            const providerId = user?.id || '';
+
+            if (!providerId) {
+                const stored = localStorage.getItem('user_payments');
+                if (stored) setPayments(JSON.parse(stored));
+                setLoading(false);
+                return;
+            }
+
+            const res = await api.get(`/Payments/provider/${providerId}`);
+            const data = Array.isArray(res.data) ? res.data : [];
+            const backendPayments = data.map((p: any) => ({
+                id: p.id,
+                clienteId: p.clienteId,
+                proveedorId: p.proveedorId,
+                monto: p.monto,
+                itemName: p.itemName,
+                itemType: p.itemType,
+                status: p.status,
+                fechaCreacion: p.fechaCreacion,
+                clientName: p.clientName
+            }));
+
+            const paymentsWithLogs = await Promise.all(
+                backendPayments.map(async (p: any) => {
+                    try {
+                        const logsRes = await api.get(`/Payments/${p.id}/logs`);
+                        return { ...p, logs: logsRes.data };
+                    } catch (e) {
+                        return p;
+                    }
+                })
+            );
+
+            setPayments(paymentsWithLogs);
+        } catch (e) {
+            console.error('Error loading provider payments:', e);
+            const stored = localStorage.getItem('user_payments');
+            if (stored) setPayments(JSON.parse(stored));
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const loadPayments = () => {
-            try {
-                const stored = localStorage.getItem('user_payments');
-                if (stored) {
-                    setPayments(JSON.parse(stored));
-                }
-            } catch (e) {
-                console.error('Error loading escrow payments:', e);
-            }
-        };
-
         loadPayments();
         window.addEventListener('storage', loadPayments);
         return () => window.removeEventListener('storage', loadPayments);
     }, []);
 
-    const markAsDelivered = (paymentId: string) => {
+    const updatePaymentStatus = async (paymentId: string, newStatus: string, action: string, message?: string) => {
         try {
-            const stored = localStorage.getItem('user_payments');
-            if (stored) {
-                const all: EscrowPayment[] = JSON.parse(stored);
-                const updated = all.map(p =>
-                    p.id === paymentId ? {
-                        ...p,
-                        status: 'Entregado',
-                        logs: [...(p.logs || []), { date: new Date().toISOString(), action: 'Entregado', message: 'El proveedor marcó el pedido como enviado/completado' }]
-                    } : p
-                );
-                localStorage.setItem('user_payments', JSON.stringify(updated));
-                setPayments(updated);
-                window.dispatchEvent(new Event('storage'));
-            }
+            setActionLoading(paymentId);
+            await api.patch(`/Payments/${paymentId}/status`, {
+                NuevoEstado: newStatus,
+                Accion: action,
+                Mensaje: message
+            });
+            await loadPayments();
         } catch (e) {
-            console.error('Error marking as delivered:', e);
+            console.error('Error updating status:', e);
+            alert('Error al actualizar el estado');
+        } finally {
+            setActionLoading(null);
         }
     };
 
-    const resolveDispute = (paymentId: string, newStatus: string, message: string) => {
-        try {
-            const stored = localStorage.getItem('user_payments');
-            if (stored) {
-                const all: EscrowPayment[] = JSON.parse(stored);
-                const updated = all.map(p =>
-                    p.id === paymentId ? {
-                        ...p,
-                        status: newStatus,
-                        logs: [...(p.logs || []), {
-                            date: new Date().toISOString(),
-                            action: 'Fallo Arbitraje',
-                            message: message
-                        }]
-                    } : p
-                );
-                localStorage.setItem('user_payments', JSON.stringify(updated));
-                setPayments(updated);
-                window.dispatchEvent(new Event('storage'));
-            }
-        } catch (e) {
-            console.error('Error resolving dispute:', e);
-        }
+    const markAsDelivered = async (paymentId: string) => {
+        await updatePaymentStatus(paymentId, 'Entregado', 'Entregado', 'El proveedor marcó el pedido como enviado/completado');
+    };
+
+    const resolveDispute = async (paymentId: string, newStatus: string, message: string) => {
+        await updatePaymentStatus(paymentId, newStatus, 'Fallo Arbitraje', message);
     };
 
     const getStatusInfo = (status: string) => {
@@ -103,6 +128,17 @@ export function ProviderEscrow() {
                 return { color: 'bg-gray-100 text-gray-500 border-gray-200', label: 'Reembolsado', icon: <AlertTriangle className="w-4 h-4" /> };
             default:
                 return { color: 'bg-gray-100 text-gray-800 border-gray-200', label: status, icon: null };
+        }
+    };
+
+    const safeFormatDate = (dateStr: string, formatStr: string) => {
+        try {
+            if (!dateStr) return 'Fecha pendiente';
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'Fecha inválida';
+            return format(date, formatStr, { locale: es });
+        } catch (e) {
+            return 'Error en fecha';
         }
     };
 
@@ -123,7 +159,14 @@ export function ProviderEscrow() {
             </Card>
 
             <div className="grid gap-4">
-                {payments.length === 0 ? (
+                {loading ? (
+                    <Card>
+                        <CardContent className="py-12 text-center">
+                            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto mb-4" />
+                            <p className="text-gray-500">Cargando ventas...</p>
+                        </CardContent>
+                    </Card>
+                ) : payments.length === 0 ? (
                     <Card className="border-dashed border-2">
                         <CardContent className="py-12 text-center text-gray-500">
                             No tienes ventas registradas bajo el sistema de garantía aún.
@@ -146,15 +189,20 @@ export function ProviderEscrow() {
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <Badge variant="secondary" className="text-[10px] py-0">{payment.itemType}</Badge>
                                                     <span className="text-xs text-gray-400">
-                                                        {format(new Date(payment.date), "d MMM, HH:mm", { locale: es })}
+                                                        {safeFormatDate(payment.fechaCreacion, "d MMM, HH:mm")}
                                                     </span>
+                                                    {payment.clientName && (
+                                                        <span className="text-xs text-indigo-600 font-medium ml-2">
+                                                            Cliente: {payment.clientName}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-3 border-t md:border-t-0 pt-3 md:pt-0">
                                             <div className="text-right">
-                                                <p className="text-2xl font-bold text-gray-900">${payment.amount.toFixed(2)}</p>
+                                                <p className="text-2xl font-bold text-gray-900">${Number(payment.monto).toFixed(2)}</p>
                                                 <div className={`flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${info.color}`}>
                                                     {info.icon}
                                                     {info.label}
@@ -213,7 +261,7 @@ export function ProviderEscrow() {
                                                 Detalles de la Disputa:
                                             </p>
                                             <p className="text-red-700 italic">
-                                                "{payment.logs?.find(l => l.action === 'Disputa Abierta')?.message || 'Sin detalles adicionales'}"
+                                                "{payment.logs?.find(l => l.accion === 'Disputa Abierta')?.mensaje || 'Sin detalles adicionales'}"
                                             </p>
                                         </div>
                                     )}
@@ -234,12 +282,12 @@ export function ProviderEscrow() {
                                                         </div>
                                                         <div className="pb-1">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="text-xs font-bold text-gray-800">{log.action}</span>
+                                                                <span className="text-xs font-bold text-gray-800">{log.accion}</span>
                                                                 <span className="text-[10px] text-gray-400">
-                                                                    {format(new Date(log.date), "HH:mm'h' - d MMM", { locale: es })}
+                                                                    {safeFormatDate(log.fechaCreacion, "HH:mm'h' - d MMM")}
                                                                 </span>
                                                             </div>
-                                                            {log.message && <p className="text-[10px] text-gray-500 mt-0.5">{log.message}</p>}
+                                                            {log.mensaje && <p className="text-[10px] text-gray-500 mt-0.5">{log.mensaje}</p>}
                                                         </div>
                                                     </div>
                                                 ))}
