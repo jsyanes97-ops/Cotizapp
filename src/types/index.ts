@@ -100,6 +100,7 @@ export interface ChatConversation {
   quotedPrice: number;
   negotiationId?: string;
   negotiationCounter?: number;
+  isNegotiable?: boolean;
   type?: string;
   rawStatus?: string;
 }

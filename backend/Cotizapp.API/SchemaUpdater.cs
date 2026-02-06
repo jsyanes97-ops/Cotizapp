@@ -399,6 +399,14 @@ namespace Cotizapp.API
                         END";
                     connection.Execute(sqlAddContador);
 
+                    // Check and Add EsNegociable
+                    var sqlAddEsNegociable = @"
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[tbl_NegociacionesServicio]') AND name = 'EsNegociable')
+                        BEGIN
+                            ALTER TABLE tbl_NegociacionesServicio ADD EsNegociable BIT NOT NULL DEFAULT 1;
+                        END";
+                    connection.Execute(sqlAddEsNegociable);
+
                 }
 
                 // FORCE Ensure ServicioId is NULLABLE (Critical for Broadcast Requests)
@@ -510,11 +518,11 @@ namespace Cotizapp.API
                         INSERT INTO tbl_NegociacionesServicio (
                             Id, SolicitudId, ServicioId, ProveedorId, ClienteId, Estado, 
                             PrecioOriginal, OfertaActual, UltimaOferta, UltimoEmisorId, 
-                            ContadorContraofertas, FechaCreacion, FechaActualizacion
+                            ContadorContraofertas, EsNegociable, FechaCreacion, FechaActualizacion
                         ) VALUES (
                             @NegociacionId, @SolicitudId, @ServicioId, @ProveedorId, @ClienteId, 'Pendiente',
                             @Precio, @Precio, @Precio, @ProveedorId,
-                            0, GETDATE(), GETDATE()
+                            0, @EsNegociable, GETDATE(), GETDATE()
                         );
                     END
                     ELSE
@@ -524,6 +532,7 @@ namespace Cotizapp.API
                             UltimaOferta = @Precio,
                             UltimoEmisorId = @ProveedorId,
                             Estado = 'Pendiente',
+                            EsNegociable = @EsNegociable,
                             FechaActualizacion = GETDATE()
                         WHERE Id = @NegociacionId;
                     END
@@ -532,6 +541,7 @@ namespace Cotizapp.API
                     DECLARE @MsgContent NVARCHAR(MAX) = 'Ha enviado una cotización de $' + CAST(@Precio AS NVARCHAR(20));
                     IF @TiempoEstimado IS NOT NULL AND LEN(@TiempoEstimado) > 0 SET @MsgContent = @MsgContent + ' (' + @TiempoEstimado + ')';
                     IF @EsNegociable = 1 SET @MsgContent = @MsgContent + '. (Negociable)';
+                    ELSE SET @MsgContent = @MsgContent + '. (No negociable)';
                     IF @Mensaje IS NOT NULL AND LEN(@Mensaje) > 0 SET @MsgContent = @MsgContent + CHAR(13) + CHAR(10) + @Mensaje;
 
                     INSERT INTO tbl_MensajesChat (Id, ConversacionId, EmisorId, Contenido, Tipo, FechaEnvio, Leido)
@@ -625,7 +635,13 @@ BEGIN
              WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 ContadorContraofertas FROM tbl_NegociacionesProducto WHERE ProductoId = c.RelacionId AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
              ELSE 0
-        END as NegotiationCounter
+        END as NegotiationCounter,
+        -- EsNegociable flag
+        CASE 
+             WHEN c.TipoRelacion = 'Servicio' THEN (SELECT TOP 1 COALESCE(EsNegociable, 1) FROM tbl_NegociacionesServicio WHERE (SolicitudId = c.RelacionId OR ServicioId = c.RelacionId) AND ClienteId = c.ClienteId AND ProveedorId = c.ProveedorId ORDER BY FechaActualizacion DESC)
+             WHEN c.TipoRelacion = 'Producto' THEN (SELECT TOP 1 CAST(P.PermitirNegociacion AS BIT) FROM tbl_NegociacionesProducto NP JOIN tbl_Productos P ON NP.ProductoId = P.Id WHERE NP.ProductoId = c.RelacionId AND NP.ClienteId = c.ClienteId AND NP.ProveedorId = c.ProveedorId ORDER BY NP.FechaActualizacion DESC)
+             ELSE 1
+        END as EsNegociable
     FROM tbl_Conversaciones c
     JOIN tbl_Usuarios u ON (c.ClienteId = u.Id OR c.ProveedorId = u.Id)
     WHERE (c.ClienteId = @UsuarioId OR c.ProveedorId = @UsuarioId)
@@ -1074,7 +1090,7 @@ BEGIN
             N.ProveedorId,
             N.ClienteId,
             N.ContadorContraofertas,
-            1 as EsNegociable -- For services, it's generally negotiable if it reached this stage, but we can refine this later if needed
+            COALESCE(N.EsNegociable, 1) as EsNegociable
         FROM tbl_NegociacionesServicio N
         LEFT JOIN tbl_SolicitudesServicio S ON N.SolicitudId = S.Id
         WHERE (N.Id = @RelacionId OR N.SolicitudId = @RelacionId OR N.ServicioId = @RelacionId)

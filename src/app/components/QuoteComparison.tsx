@@ -121,6 +121,7 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
           providerName={selectedQuote.providerName}
           serviceName="Servicio de Plomería"
           quotedPrice={selectedQuote.price}
+          isNegotiable={selectedQuote.isNegotiable}
           onBack={() => setChatMode(false)}
         />
       </div>
@@ -230,7 +231,7 @@ export function QuoteComparison({ quotes }: QuoteComparisonProps) {
             </Button>
 
             {/* Botón de negociación */}
-            {selectedQuoteId !== quote.id && (
+            {selectedQuoteId !== quote.id && quote.isNegotiable && (
               <Button
                 variant="ghost"
                 className="w-full mt-2 text-blue-600"

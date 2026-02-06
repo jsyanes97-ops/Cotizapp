@@ -76,7 +76,8 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
 
     const count = getVal(neg, 'ContadorContraofertas') ?? getVal(neg, 'contadorContraofertas') ?? 0;
     const limitReached = count >= 3;
-    const isNegotiable = getVal(neg, 'EsNegociable') ?? getVal(neg, 'esNegotiable') ?? true;
+    const isNegRaw = getVal(neg, 'EsNegociable') ?? getVal(neg, 'esNegotiable');
+    const isNegotiable = isNegRaw === false || isNegRaw === 0 || isNegRaw === "0" || isNegRaw === "false" ? false : true;
 
     // Status Display Logic
     const getStatusBadge = () => {
@@ -190,7 +191,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                     )}
                 </CardContent>
 
-                {/* Actions for Client - Hide while loading or if it's not our turn */}
+                {/* Actions for Client */}
                 {isClientTurn && !loading && (
                     <CardFooter className="flex flex-col gap-1 pt-2">
                         {!isCountering ? (
@@ -204,28 +205,23 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                                     <Check className="w-4 h-4 mr-1" /> Aceptar
                                 </Button>
 
-                                {isNegotiable ? (
-                                    limitReached ? (
-                                        <Button
-                                            variant="outline"
-                                            className="flex-1 border-gray-200 text-gray-500 cursor-not-allowed"
-                                            size="sm"
-                                            disabled={true}
-                                        >
-                                            <X className="w-4 h-4 mr-1" /> Límite Alcanzado
-                                        </Button>
+                                <Button
+                                    variant="outline"
+                                    className={`flex-1 ${!isNegotiable ? 'border-gray-200 text-gray-500 cursor-not-allowed' : 'border-blue-200 text-blue-700 hover:bg-blue-50'}`}
+                                    size="sm"
+                                    onClick={() => {
+                                        if (isNegotiable && !limitReached) setIsCountering(true);
+                                    }}
+                                    disabled={loading || !isNegotiable || limitReached}
+                                >
+                                    {!isNegotiable ? (
+                                        <><X className="w-4 h-4 mr-1" /> No Negociable</>
+                                    ) : limitReached ? (
+                                        <><X className="w-4 h-4 mr-1" /> Límite Alcanzado</>
                                     ) : (
-                                        <Button
-                                            variant="outline"
-                                            className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
-                                            size="sm"
-                                            onClick={() => setIsCountering(true)}
-                                            disabled={loading}
-                                        >
-                                            <RefreshCw className="w-4 h-4 mr-1" /> Contraofertar
-                                        </Button>
-                                    )
-                                ) : null}
+                                        <><RefreshCw className="w-4 h-4 mr-1" /> Contraofertar</>
+                                    )}
+                                </Button>
 
                                 <Button
                                     variant="ghost"
@@ -271,7 +267,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                 {!isClientTurn && (estado.toLowerCase() === 'pendiente' || estado.toLowerCase() === 'contraoferta') && (
                     <CardFooter className="pt-0 pb-2">
                         <p className="text-[10px] text-gray-400 text-center w-full italic">
-                            Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normLastSender?.substring(0, 5)})
+                            Sistema: Esperando respuesta del otro participante
                         </p>
                     </CardFooter>
                 )}

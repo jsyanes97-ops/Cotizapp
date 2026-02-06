@@ -53,7 +53,7 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
   const limitPerUser = 2;
   const totalLimit = 3;
 
-  const canCounter = myCounterOffers < limitPerUser && totalCounterOffers < totalLimit;
+  const canCounter = !!quote.isNegotiable && myCounterOffers < limitPerUser && totalCounterOffers < totalLimit;
 
   const isFinalOffer = totalCounterOffers >= totalLimit;
 
@@ -322,9 +322,14 @@ export function PriceNegotiation({ quote, userRole, onUpdateQuote, onAccept }: P
         {/* Info */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
           <p className="text-blue-900">
-            💡 <strong>Tip:</strong> {userRole === 'client'
-              ? 'Negocia de forma justa. Un buen precio beneficia a ambos.'
-              : 'Sé flexible pero cubre tus costos. Recuerda incluir materiales y tiempo.'}
+            {!quote.isNegotiable ? (
+              <>🚫 <strong>Nota:</strong> Este proveedor ha indicado que el precio no es negociable.</>
+            ) : (
+              <>💡 <strong>Tip:</strong> {userRole === 'client'
+                ? 'Negocia de forma justa. Un buen precio beneficia a ambos.'
+                : 'Sé flexible pero cubre tus costos. Recuerda incluir materiales y tiempo.'}
+              </>
+            )}
           </p>
         </div>
 

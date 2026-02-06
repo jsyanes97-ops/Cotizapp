@@ -26,30 +26,31 @@ export function ChatList({ onBack, userRole }: ChatListProps) {
         try {
             const response = await chatService.getConversations();
             const mappedChats: ChatConversation[] = response.data.map((c: any) => {
+                const getVal = (key: string) => c[key] ?? c[key.charAt(0).toLowerCase() + key.slice(1)];
+
                 let frontendStatus: 'active' | 'completed' | 'cancelled' = 'active';
 
-                const backendStatus = (c.Status || '').toLowerCase();
+                const backendStatus = (getVal('Status') || '').toLowerCase();
                 if (backendStatus === 'rechazada') {
                     frontendStatus = 'cancelled';
                 }
-                // 'aceptada' stays as 'active' frontend status 
-                // until the provider manually marks it as completed
 
                 return {
-                    id: c.Id,
-                    providerId: c.ProveedorId,
-                    providerName: c.InterviewerName || 'Usuario',
+                    id: getVal('Id'),
+                    providerId: getVal('ProveedorId'),
+                    providerName: getVal('InterviewerName') || 'Usuario',
                     providerRating: 5.0,
-                    lastMessage: c.LastMessage || 'Inicio de conversación',
-                    lastMessageTime: new Date(c.LastMessageTime || Date.now()),
-                    unreadCount: c.UnreadCount || 0,
+                    lastMessage: getVal('LastMessage') || 'Inicio de conversación',
+                    lastMessageTime: new Date(getVal('LastMessageTime') || Date.now()),
+                    unreadCount: getVal('UnreadCount') || 0,
                     status: frontendStatus,
                     rawStatus: backendStatus,
-                    serviceCategory: c.ServiceCategory || 'General',
-                    quotedPrice: c.QuotedPrice || 0,
-                    negotiationId: c.NegotiationId,
-                    negotiationCounter: c.NegotiationCounter,
-                    type: c.TipoRelacion
+                    serviceCategory: getVal('ServiceCategory') || 'General',
+                    quotedPrice: getVal('QuotedPrice') || 0,
+                    negotiationId: getVal('NegotiationId'),
+                    negotiationCounter: getVal('NegotiationCounter'),
+                    isNegotiable: getVal('EsNegociable'),
+                    type: getVal('TipoRelacion')
                 };
             });
             setChats(mappedChats);
@@ -159,6 +160,7 @@ export function ChatList({ onBack, userRole }: ChatListProps) {
                             quotedPrice={selectedChat.quotedPrice}
                             negotiationId={selectedChat.negotiationId}
                             negotiationCounter={selectedChat.negotiationCounter}
+                            isNegotiable={selectedChat.isNegotiable}
                             type={selectedChat.type}
                             status={selectedChat.rawStatus}
                             userRole={userRole}

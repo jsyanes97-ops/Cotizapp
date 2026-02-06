@@ -17,6 +17,7 @@ interface ProviderChatProps {
   quotedPrice: number;
   negotiationId?: string;
   negotiationCounter?: number;
+  isNegotiable?: boolean;
   type?: string;
   status?: string;
   userRole?: 'cliente' | 'proveedor';
@@ -24,7 +25,21 @@ interface ProviderChatProps {
   onComplete?: () => void;
 }
 
-export function ProviderChat({ conversationId, providerId, providerName, serviceName, quotedPrice, negotiationId, negotiationCounter, type, status, userRole, onBack, onComplete }: ProviderChatProps) {
+export function ProviderChat({
+  conversationId,
+  providerId,
+  providerName,
+  serviceName,
+  quotedPrice,
+  negotiationId,
+  negotiationCounter,
+  isNegotiable,
+  type,
+  status,
+  userRole,
+  onBack,
+  onComplete
+}: ProviderChatProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -139,6 +154,9 @@ export function ProviderChat({ conversationId, providerId, providerName, service
 
     return { isPending, isRejected, isAccepted };
   };
+
+  // Robust check for isNegotiable (handles boolean, number, string from backend)
+  const isNeg = isNegotiable !== false && (isNegotiable as any) !== 0 && (isNegotiable as any) !== "0" && (isNegotiable as any) !== "false";
 
   const { isPending: isNegotiationPending, isRejected: isNegotiationRejected, isAccepted: isNegotiationAccepted } = getNegotiationState();
 
@@ -324,7 +342,9 @@ export function ProviderChat({ conversationId, providerId, providerName, service
               <TrendingUp className="w-5 h-5" />
               {isProvider
                 ? "El cliente ha enviado una contraoferta. Responde aquí o en 'Negociaciones'."
-                : "El proveedor ha enviado una contraoferta. Responde para continuar el chat."
+                : (!isNeg
+                  ? "El proveedor ha enviado una cotización. Acepta o rechaza para continuar."
+                  : "El proveedor ha enviado una contraoferta. Responde para continuar el chat.")
               }
             </div>
             <div className="flex gap-2">
@@ -334,9 +354,11 @@ export function ProviderChat({ conversationId, providerId, providerName, service
               <Button
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={() => handleActionClick('Contraoferta')}
-                disabled={limitReached}
+                disabled={limitReached || (!isProvider && !isNeg)}
               >
-                {limitReached ? 'Límite Alcanzado' : 'Contraofertar'}
+                {(!isProvider && !isNeg)
+                  ? 'No Negociable'
+                  : (limitReached ? 'Límite Alcanzado' : 'Contraofertar')}
               </Button>
               <Button className="flex-1 bg-red-100 hover:bg-red-200 text-red-700" variant="ghost" onClick={() => handleActionClick('Rechazar')}>
                 Rechazar
