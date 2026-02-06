@@ -5,6 +5,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Check, X, RefreshCw, DollarSign } from 'lucide-react';
 import { clientNegotiationService } from '@/services';
+import { PaymentModal } from './PaymentModal';
 
 interface NegotiationContext {
     negociacionId: string;
@@ -30,6 +31,9 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const [isCountering, setIsCountering] = useState(false);
     const [counterAmount, setCounterAmount] = useState('');
     const [loading, setLoading] = useState(false);
+
+    // Payment Modal State
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
 
     const [localActionTaken, setLocalActionTaken] = useState(false);
 
@@ -58,16 +62,10 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     const normClienteId = normalizeId(clienteId);
 
     // Reset localActionTaken ONLY once the server confirms WE are the last sender
-    // (meaning our action was registered) or the negotiation finalized.
     if (localActionTaken && (normLastSender === normCurrentUser || !['pendiente', 'contraoferta'].includes(estado.toLowerCase()))) {
         setLocalActionTaken(false);
     }
 
-    // Client turn logic: 
-    // 1. MUST NOT have already acted locally in this render cycle
-    // 2. MUST be the client (currentUser matching the negotiation's client property)
-    // 3. AND the last person who acted MUST NOT be the current user
-    // 4. AND the state is 'Pendiente' or 'Contraoferta'
     const isClientTurn =
         !localActionTaken &&
         normCurrentUser &&
@@ -76,20 +74,9 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
         normLastSender !== normCurrentUser &&
         (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente');
 
-    // Check both camelCase and PascalCase to be safe with Dapper/JSON serialization
     const count = getVal(neg, 'ContadorContraofertas') ?? getVal(neg, 'contadorContraofertas') ?? 0;
     const limitReached = count >= 3;
     const isNegotiable = getVal(neg, 'EsNegociable') ?? getVal(neg, 'esNegotiable') ?? true;
-
-    console.log('[NegotiationStatusCard] DEBUG v7:', {
-        estado,
-        normLastSender,
-        normCurrentUser,
-        normClienteId,
-        isClientTurn,
-        loading,
-        localActionTaken
-    });
 
     // Status Display Logic
     const getStatusBadge = () => {
@@ -101,11 +88,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
         return <Badge variant="outline">{estado}</Badge>;
     };
 
-    const handleAction = async (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
-        if (action === 'Contraoferta' && limitReached) {
-            alert('Límite de contraofertas alcanzado.');
-            return;
-        }
+    const executeAction = async (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
         setLoading(true);
         setLocalActionTaken(true); // Hide buttons IMMEDIATELY
         try {
@@ -118,7 +101,6 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                 message: action === 'Contraoferta' ? 'Contraoferta enviada desde el chat' : undefined
             });
             setIsCountering(false);
-            // Refresh parent state
             await onUpdate();
         } catch (error) {
             console.error(error);
@@ -126,7 +108,22 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
             alert('Error al procesar la acción');
         } finally {
             setLoading(false);
+            setShowPaymentModal(false);
         }
+    };
+
+    const handleAction = async (action: 'Aceptar' | 'Rechazar' | 'Contraoferta') => {
+        if (action === 'Contraoferta' && limitReached) {
+            alert('Límite de contraofertas alcanzado.');
+            return;
+        }
+
+        if (action === 'Aceptar') {
+            setShowPaymentModal(true);
+            return;
+        }
+
+        await executeAction(action);
     };
 
     if (estado.toLowerCase() === 'aceptada') {
@@ -138,7 +135,7 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
                             <Check className="w-8 h-8 text-green-600" />
                         </div>
                     </div>
-                    <h3 className="text-lg font-semibold text-green-800">¡Trato Cerrado!</h3>
+                    <h3 className="text-lg font-semibold text-green-800">¡Trato Cerrado y Pagado!</h3>
                     <p className="text-green-700">Has acordado un precio de <span className="font-bold">${neg.OfertaActual ?? neg.ofertaActual}</span></p>
                 </CardContent>
             </Card>
@@ -162,121 +159,130 @@ export function NegotiationStatusCard({ negotiation, currentUserId, onUpdate }: 
     }
 
     return (
-        <Card className="mb-4 border-blue-100 bg-blue-50/50">
-            <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle className="text-base font-semibold text-blue-900">
-                            Negociando: {neg.Titulo ?? neg.titulo}
-                        </CardTitle>
-                        <p className="text-sm text-blue-600 mt-1">Precio Original: ${neg.PrecioOriginal ?? neg.precioOriginal}</p>
-                    </div>
-                    {getStatusBadge()}
-                </div>
-            </CardHeader>
-            <CardContent className="pb-2">
-                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
-                    <span className="text-sm text-gray-500">Oferta Actual</span>
-                    <span className="text-xl font-bold text-blue-700">${neg.OfertaActual ?? neg.ofertaActual}</span>
-                </div>
-
-                {normLastSender !== normCurrentUser && (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente') && (
-                    <p className="text-xs text-orange-600 mt-2 font-medium">
-                        📣 El proveedor te ha enviado esta cotización/oferta. {limitReached ? 'El límite de ofertas ha sido alcanzado.' : '¿Qué deseas hacer?'}
-                    </p>
-                )}
-                {normLastSender === normCurrentUser && (
-                    <p className="text-xs text-gray-500 mt-2">
-                        ⏳ Esperando respuesta del proveedor...
-                    </p>
-                )}
-            </CardContent>
-
-            {/* Actions for Client - Hide while loading or if it's not our turn */}
-            {isClientTurn && !loading && (
-                <CardFooter className="flex flex-col gap-1 pt-2">
-                    {!isCountering ? (
-                        <div className="flex gap-2 w-full">
-                            <Button
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                                size="sm"
-                                onClick={() => handleAction('Aceptar')}
-                                disabled={loading}
-                            >
-                                <Check className="w-4 h-4 mr-1" /> Aceptar
-                            </Button>
-
-                            {isNegotiable ? (
-                                limitReached ? (
-                                    <Button
-                                        variant="outline"
-                                        className="flex-1 border-gray-200 text-gray-500 cursor-not-allowed"
-                                        size="sm"
-                                        disabled={true}
-                                    >
-                                        <X className="w-4 h-4 mr-1" /> Límite Alcanzado
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        variant="outline"
-                                        className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
-                                        size="sm"
-                                        onClick={() => setIsCountering(true)}
-                                        disabled={loading}
-                                    >
-                                        <RefreshCw className="w-4 h-4 mr-1" /> Contraofertar
-                                    </Button>
-                                )
-                            ) : null}
-
-                            <Button
-                                variant="ghost"
-                                className="px-3 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                size="sm"
-                                onClick={() => handleAction('Rechazar')}
-                                disabled={loading}
-                            >
-                                <X className="w-4 h-4" />
-                            </Button>
+        <>
+            <Card className="mb-4 border-blue-100 bg-blue-50/50">
+                <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <CardTitle className="text-base font-semibold text-blue-900">
+                                Negociando: {neg.Titulo ?? neg.titulo}
+                            </CardTitle>
+                            <p className="text-sm text-blue-600 mt-1">Precio Original: ${neg.PrecioOriginal ?? neg.precioOriginal}</p>
                         </div>
-                    ) : (
-                        <div className="w-full space-y-2 bg-white p-3 rounded-lg border border-blue-100">
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-700">Tu Contraoferta:</span>
-                                <div className="relative flex-1">
-                                    <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                                    <Input
-                                        type="number"
-                                        placeholder="Monto"
-                                        className="pl-8 h-9"
-                                        value={counterAmount}
-                                        onChange={(e) => setCounterAmount(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                                <Button size="sm" variant="ghost" onClick={() => setIsCountering(false)}>Cancelar</Button>
+                        {getStatusBadge()}
+                    </div>
+                </CardHeader>
+                <CardContent className="pb-2">
+                    <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                        <span className="text-sm text-gray-500">Oferta Actual</span>
+                        <span className="text-xl font-bold text-blue-700">${neg.OfertaActual ?? neg.ofertaActual}</span>
+                    </div>
+
+                    {normLastSender !== normCurrentUser && (estado.toLowerCase() === 'contraoferta' || estado.toLowerCase() === 'pendiente') && (
+                        <p className="text-xs text-orange-600 mt-2 font-medium">
+                            📣 El proveedor te ha enviado esta cotización/oferta. {limitReached ? 'El límite de ofertas ha sido alcanzado.' : '¿Qué deseas hacer?'}
+                        </p>
+                    )}
+                    {normLastSender === normCurrentUser && (
+                        <p className="text-xs text-gray-500 mt-2">
+                            ⏳ Esperando respuesta del proveedor...
+                        </p>
+                    )}
+                </CardContent>
+
+                {/* Actions for Client - Hide while loading or if it's not our turn */}
+                {isClientTurn && !loading && (
+                    <CardFooter className="flex flex-col gap-1 pt-2">
+                        {!isCountering ? (
+                            <div className="flex gap-2 w-full">
                                 <Button
+                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                                     size="sm"
-                                    className="bg-blue-600"
-                                    onClick={() => handleAction('Contraoferta')}
-                                    disabled={!counterAmount || loading}
+                                    onClick={() => handleAction('Aceptar')}
+                                    disabled={loading}
                                 >
-                                    Enviar
+                                    <Check className="w-4 h-4 mr-1" /> Aceptar
+                                </Button>
+
+                                {isNegotiable ? (
+                                    limitReached ? (
+                                        <Button
+                                            variant="outline"
+                                            className="flex-1 border-gray-200 text-gray-500 cursor-not-allowed"
+                                            size="sm"
+                                            disabled={true}
+                                        >
+                                            <X className="w-4 h-4 mr-1" /> Límite Alcanzado
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="outline"
+                                            className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                            size="sm"
+                                            onClick={() => setIsCountering(true)}
+                                            disabled={loading}
+                                        >
+                                            <RefreshCw className="w-4 h-4 mr-1" /> Contraofertar
+                                        </Button>
+                                    )
+                                ) : null}
+
+                                <Button
+                                    variant="ghost"
+                                    className="px-3 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    size="sm"
+                                    onClick={() => handleAction('Rechazar')}
+                                    disabled={loading}
+                                >
+                                    <X className="w-4 h-4" />
                                 </Button>
                             </div>
-                        </div>
-                    )}
-                </CardFooter>
-            )}
+                        ) : (
+                            <div className="w-full space-y-2 bg-white p-3 rounded-lg border border-blue-100">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-700">Tu Contraoferta:</span>
+                                    <div className="relative flex-1">
+                                        <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                        <Input
+                                            type="number"
+                                            placeholder="Monto"
+                                            className="pl-8 h-9"
+                                            value={counterAmount}
+                                            onChange={(e) => setCounterAmount(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                    <Button size="sm" variant="ghost" onClick={() => setIsCountering(false)}>Cancelar</Button>
+                                    <Button
+                                        size="sm"
+                                        className="bg-blue-600"
+                                        onClick={() => handleAction('Contraoferta')}
+                                        disabled={!counterAmount || loading}
+                                    >
+                                        Enviar
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </CardFooter>
+                )}
 
-            {!isClientTurn && (estado.toLowerCase() === 'pendiente' || estado.toLowerCase() === 'contraoferta') && (
-                <CardFooter className="pt-0 pb-2">
-                    <p className="text-[10px] text-gray-400 text-center w-full italic">
-                        Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normLastSender?.substring(0, 5)})
-                    </p>
-                </CardFooter>
-            )}
-        </Card>
+                {!isClientTurn && (estado.toLowerCase() === 'pendiente' || estado.toLowerCase() === 'contraoferta') && (
+                    <CardFooter className="pt-0 pb-2">
+                        <p className="text-[10px] text-gray-400 text-center w-full italic">
+                            Sistema: Esperando respuesta del otro participante (Casing: {estado}, Sender: {normLastSender?.substring(0, 5)})
+                        </p>
+                    </CardFooter>
+                )}
+            </Card>
+
+            <PaymentModal
+                open={showPaymentModal}
+                onOpenChange={setShowPaymentModal}
+                amount={neg.OfertaActual ?? neg.ofertaActual ?? 0}
+                onSuccess={() => executeAction('Aceptar')}
+            />
+        </>
     );
 }

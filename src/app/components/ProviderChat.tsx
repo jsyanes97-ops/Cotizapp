@@ -7,6 +7,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { chatService, clientNegotiationService, providerNegotiationService } from '@/services';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/app/components/ui/dialog';
 import { Label } from '@/app/components/ui/label';
+import { PaymentModal } from './client/PaymentModal';
 
 interface ProviderChatProps {
   conversationId: string;
@@ -33,6 +34,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   const [actionType, setActionType] = useState<'Aceptar' | 'Rechazar' | 'Contraoferta' | null>(null);
   const [counterOfferAmount, setCounterOfferAmount] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Local status state to override prop when client accepts
   const [localStatus, setLocalStatus] = useState<string | undefined>(undefined);
@@ -156,17 +158,12 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
   }
 
   // BLOCKING LOGIC:
-  // 1. If negotiation is rejected -> Blocked for everyone
-  // 2. If there's an active negotiation AND status is NOT 'Aceptada' -> Blocked for BOTH client and provider
-  // 3. If no negotiation (direct purchase) OR negotiation is accepted -> Unlocked for both
-  // Use localStatus if available (updated when client accepts), otherwise use prop status
   const currentStatus = localStatus || status || '';
   const statusLower = currentStatus.toLowerCase();
   const isAceptada = statusLower === 'aceptada' || statusLower === 'completada' || statusLower === 'finalizada' || isNegotiationAccepted;
   const isNegotiationActive = !!negotiationId;
 
   // Block chat for BOTH roles if there's an active negotiation that hasn't been accepted
-  // We check the literal status from backend first for 'Rechazada' persistence
   const isRejectedState = statusLower === 'rechazada' || isNegotiationRejected;
   const chatDisabled = isRejectedState || (isNegotiationActive && !isAceptada);
 
@@ -179,16 +176,7 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
     setIsActionDialogOpen(true);
   };
 
-  const submitAction = async () => {
-    if (!negotiationId || !type || !actionType) return;
-
-    if (actionType === 'Contraoferta') {
-      if (!counterOfferAmount || isNaN(parseFloat(counterOfferAmount)) || parseFloat(counterOfferAmount) <= 0) {
-        alert('Por favor ingresa un monto válido para la contraoferta.');
-        return;
-      }
-    }
-
+  const executeNegotiationAction = async () => {
     try {
       setLocalActionTaken(true); // Hide buttons IMMEDIATELY
 
@@ -213,10 +201,12 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       // Action successful
       if (Message) alert(Message);
 
+      // Reset UI state
       setIsActionDialogOpen(false);
       setActionType(null);
       setCounterOfferAmount('');
       setActionMessage('');
+      setShowPaymentModal(false);
 
       // Handle different actions
       if (actionType === 'Aceptar') {
@@ -237,6 +227,25 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
       setLocalActionTaken(false); // Restore on error
       alert('Error: ' + (error.response?.data?.Error || error.message));
     }
+  };
+
+  const submitAction = async () => {
+    if (!negotiationId || !type || !actionType) return;
+
+    if (actionType === 'Contraoferta') {
+      if (!counterOfferAmount || isNaN(parseFloat(counterOfferAmount)) || parseFloat(counterOfferAmount) <= 0) {
+        alert('Por favor ingresa un monto válido para la contraoferta.');
+        return;
+      }
+    }
+
+    if (actionType === 'Aceptar' && !isProvider) {
+      setIsActionDialogOpen(false);
+      setShowPaymentModal(true);
+      return;
+    }
+
+    await executeNegotiationAction();
   };
 
   const renderMessageContent = (msg: any) => {
@@ -413,6 +422,13 @@ export function ProviderChat({ conversationId, providerName, serviceName, quoted
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PaymentModal
+        open={showPaymentModal}
+        onOpenChange={setShowPaymentModal}
+        amount={quotedPrice || 0}
+        onSuccess={() => executeNegotiationAction()}
+      />
 
     </Card>
   );
