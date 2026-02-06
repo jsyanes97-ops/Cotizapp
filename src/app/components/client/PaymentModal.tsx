@@ -43,7 +43,10 @@ export function PaymentModal({ open, onOpenChange, amount, onSuccess, providerNa
                 providerName: providerName || 'Proveedor',
                 itemName: itemName || 'Concepto General',
                 itemType: itemType || 'Servicio',
-                status: 'Retenido'
+                status: 'Retenido',
+                logs: [
+                    { date: new Date().toISOString(), action: 'Pago Realizado', message: 'Fondos retenidos en garantía' }
+                ]
             };
             localStorage.setItem('user_payments', JSON.stringify([newPayment, ...existingPayments]));
         } catch (e) {

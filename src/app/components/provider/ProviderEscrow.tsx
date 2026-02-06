@@ -2,9 +2,15 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { Package, Hammer, CheckCircle2, DollarSign, Clock, ShieldCheck } from 'lucide-react';
+import { Package, Hammer, CheckCircle2, DollarSign, Clock, ShieldCheck, History as HistoryIcon, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+interface PaymentLog {
+    date: string;
+    action: string;
+    message?: string;
+}
 
 interface EscrowPayment {
     id: string;
@@ -14,6 +20,7 @@ interface EscrowPayment {
     itemName: string;
     itemType: 'Producto' | 'Servicio';
     status: string;
+    logs?: PaymentLog[];
 }
 
 export function ProviderEscrow() {
@@ -42,7 +49,11 @@ export function ProviderEscrow() {
             if (stored) {
                 const all: EscrowPayment[] = JSON.parse(stored);
                 const updated = all.map(p =>
-                    p.id === paymentId ? { ...p, status: 'Entregado' } : p
+                    p.id === paymentId ? {
+                        ...p,
+                        status: 'Entregado',
+                        logs: [...(p.logs || []), { date: new Date().toISOString(), action: 'Entregado', message: 'El proveedor marcó el pedido como enviado/completado' }]
+                    } : p
                 );
                 localStorage.setItem('user_payments', JSON.stringify(updated));
                 setPayments(updated);
@@ -50,6 +61,31 @@ export function ProviderEscrow() {
             }
         } catch (e) {
             console.error('Error marking as delivered:', e);
+        }
+    };
+
+    const resolveDispute = (paymentId: string, newStatus: string, message: string) => {
+        try {
+            const stored = localStorage.getItem('user_payments');
+            if (stored) {
+                const all: EscrowPayment[] = JSON.parse(stored);
+                const updated = all.map(p =>
+                    p.id === paymentId ? {
+                        ...p,
+                        status: newStatus,
+                        logs: [...(p.logs || []), {
+                            date: new Date().toISOString(),
+                            action: 'Fallo Arbitraje',
+                            message: message
+                        }]
+                    } : p
+                );
+                localStorage.setItem('user_payments', JSON.stringify(updated));
+                setPayments(updated);
+                window.dispatchEvent(new Event('storage'));
+            }
+        } catch (e) {
+            console.error('Error resolving dispute:', e);
         }
     };
 
@@ -61,6 +97,10 @@ export function ProviderEscrow() {
                 return { color: 'bg-blue-100 text-blue-800 border-blue-200', label: 'Esperando Confirmación Cliente', icon: <Package className="w-4 h-4" /> };
             case 'Liberado':
                 return { color: 'bg-green-100 text-green-800 border-green-200', label: 'Pago Acreditado', icon: <DollarSign className="w-4 h-4" /> };
+            case 'En Disputa':
+                return { color: 'bg-red-100 text-red-800 border-red-200', label: 'En Disputa (Bloqueado)', icon: <AlertTriangle className="w-4 h-4" /> };
+            case 'Devuelto':
+                return { color: 'bg-gray-100 text-gray-500 border-gray-200', label: 'Reembolsado', icon: <AlertTriangle className="w-4 h-4" /> };
             default:
                 return { color: 'bg-gray-100 text-gray-800 border-gray-200', label: status, icon: null };
         }
@@ -130,14 +170,82 @@ export function ProviderEscrow() {
                                                     Marcar como Entregado
                                                 </Button>
                                             )}
+                                            {payment.status === 'En Disputa' && (
+                                                <div className="flex flex-col gap-2">
+                                                    <Badge variant="destructive" className="justify-center">Pago Bloqueado</Badge>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="text-xs border-red-200 text-red-700 hover:bg-red-50"
+                                                        onClick={() => resolveDispute(payment.id, 'Liberado', 'Resolución Admin: Fondos liberados al proveedor')}
+                                                    >
+                                                        Simular Resolución Admin (Liberar)
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="text-xs border-gray-200 text-gray-700"
+                                                        onClick={() => resolveDispute(payment.id, 'Devuelto', 'Resolución Admin: Reembolso al cliente')}
+                                                    >
+                                                        Simular Resolución Admin (Reembolso)
+                                                    </Button>
+                                                </div>
+                                            )}
                                             {payment.status === 'Liberado' && (
                                                 <div className="text-xs text-green-600 flex items-center gap-1 font-medium">
                                                     <CheckCircle2 className="w-4 h-4" />
                                                     Saldo disponible en cuenta
                                                 </div>
                                             )}
+                                            {payment.status === 'Devuelto' && (
+                                                <div className="text-xs text-red-600 flex items-center gap-1 font-medium">
+                                                    <AlertTriangle className="w-4 h-4" />
+                                                    Fondos Reembolsados
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
+
+                                    {payment.status === 'En Disputa' && (
+                                        <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-xs">
+                                            <p className="font-bold text-red-800 flex items-center gap-1 mb-1">
+                                                <AlertTriangle className="w-3.5 h-3.5" />
+                                                Detalles de la Disputa:
+                                            </p>
+                                            <p className="text-red-700 italic">
+                                                "{payment.logs?.find(l => l.action === 'Disputa Abierta')?.message || 'Sin detalles adicionales'}"
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Timeline / Audit Log */}
+                                    {payment.logs && payment.logs.length > 0 && (
+                                        <div className="mt-6 border-t pt-4">
+                                            <div className="flex items-center gap-2 mb-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                                                <HistoryIcon className="w-3.5 h-3.5" />
+                                                Historial de la Transacción
+                                            </div>
+                                            <div className="space-y-4">
+                                                {payment.logs.map((log, idx) => (
+                                                    <div key={idx} className="flex gap-3">
+                                                        <div className="flex flex-col items-center">
+                                                            <div className={`w-2 h-2 rounded-full mt-1.5 ${idx === payment.logs!.length - 1 ? 'bg-indigo-600' : 'bg-gray-200'}`} />
+                                                            {idx !== payment.logs!.length - 1 && <div className="w-0.5 h-full bg-gray-50 mt-1" />}
+                                                        </div>
+                                                        <div className="pb-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-gray-800">{log.action}</span>
+                                                                <span className="text-[10px] text-gray-400">
+                                                                    {format(new Date(log.date), "HH:mm'h' - d MMM", { locale: es })}
+                                                                </span>
+                                                            </div>
+                                                            {log.message && <p className="text-[10px] text-gray-500 mt-0.5">{log.message}</p>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
                         );
