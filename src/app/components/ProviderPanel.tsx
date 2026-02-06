@@ -160,7 +160,7 @@ export function ProviderPanel({ onLogout }: { onLogout?: () => void }) {
       <div className="flex-1 overflow-hidden">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
           <div className="bg-white border-b px-2 sm:px-6 overflow-x-auto">
-            <TabsList className="grid w-full min-w-[720px] grid-cols-9 h-auto">
+            <TabsList className="grid w-full min-w-[720px] grid-cols-8 h-auto">
               <TabsTrigger value="solicitudes" className="relative py-2 sm:py-3 text-xs sm:text-sm">
                 <span className="hidden sm:inline">Solicitudes</span>
                 <span className="sm:hidden">Solicit.</span>
@@ -176,10 +176,12 @@ export function ProviderPanel({ onLogout }: { onLogout?: () => void }) {
                 <Package2 className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Productos</span>
               </TabsTrigger>
+              {/* 
               <TabsTrigger value="negociaciones" className="py-2 sm:py-3 text-xs sm:text-sm">
                 <TrendingUp className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Negoc.</span>
-              </TabsTrigger>
+              </TabsTrigger> 
+              */}
               <TabsTrigger value="ventas" className="py-2 sm:py-3 text-xs sm:text-sm">
                 <DollarSign className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Ventas</span>
@@ -216,9 +218,11 @@ export function ProviderPanel({ onLogout }: { onLogout?: () => void }) {
               <ProductInventory />
             </TabsContent>
 
+            {/* 
             <TabsContent value="negociaciones" className="mt-0">
               <ProviderNegotiations />
-            </TabsContent>
+            </TabsContent> 
+            */}
 
             <TabsContent value="ventas" className="mt-0">
               <ProviderEscrow />
